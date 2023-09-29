@@ -1,38 +1,57 @@
-<img src="https://github.com/contiki-ng/contiki-ng.github.io/blob/master/images/logo/Contiki_logo_2RGB.png" alt="Logo" width="256">
+# Set up environment to compile Contiki-NG code:
 
-# Contiki-NG: The OS for Next Generation IoT Devices
+### WSL2 for Windows 
+https://ubuntu.com/tutorials/install-ubuntu-on-wsl2-on-windows-10#1-overview
+Ubuntu 20.04 LTS Image
 
-[![Github Actions](https://github.com/contiki-ng/contiki-ng/workflows/CI/badge.svg?branch=develop)](https://github.com/contiki-ng/contiki-ng/actions)
-[![Documentation Status](https://readthedocs.org/projects/contiki-ng/badge/?version=master)](https://contiki-ng.readthedocs.io/en/master/?badge=master)
-[![license](https://img.shields.io/badge/license-3--clause%20bsd-brightgreen.svg)](https://github.com/contiki-ng/contiki-ng/blob/master/LICENSE.md)
-[![Latest release](https://img.shields.io/github/release/contiki-ng/contiki-ng.svg)](https://github.com/contiki-ng/contiki-ng/releases/latest)
-[![GitHub Release Date](https://img.shields.io/github/release-date/contiki-ng/contiki-ng.svg)](https://github.com/contiki-ng/contiki-ng/releases/latest)
-[![Last commit](https://img.shields.io/github/last-commit/contiki-ng/contiki-ng.svg)](https://github.com/contiki-ng/contiki-ng/commit/HEAD)
+## Set up Linux toolchain: 
+https://docs.contiki-ng.org/en/develop/doc/getting-started/Toolchain-installation-on-Linux.html?highlight=git%20submodule%20#clone-contiki-ng
 
-[![Stack Overflow Tag](https://img.shields.io/badge/Stack%20Overflow%20tag-Contiki--NG-blue?logo=stackoverflow)](https://stackoverflow.com/questions/tagged/contiki-ng)
-[![Gitter](https://img.shields.io/badge/Gitter-Contiki--NG-blue?logo=gitter)](https://gitter.im/contiki-ng)
-[![Twitter](https://img.shields.io/badge/Twitter-%40contiki__ng-blue?logo=twitter)](https://twitter.com/contiki_ng)
+Also install the ARM Compiler by add to the working-directory
+    
+    gcc-arm-none-eabi-9-2020-q2-update/bin to your path.
 
-Contiki-NG is an open-source, cross-platform operating system for Next-Generation IoT devices. It focuses on dependable (secure and reliable) low-power communication and standard protocols, such as IPv6/6LoWPAN, 6TiSCH, RPL, and CoAP. Contiki-NG comes with extensive documentation, tutorials, a roadmap, release cycle, and well-defined development flow for smooth integration of community contributions.
+Clone Contiki-NG at a chosen directory 
 
-Unless explicitly stated otherwise, Contiki-NG sources are distributed under
-the terms of the [3-clause BSD license](LICENSE.md). This license gives
-everyone the right to use and distribute the code, either in binary or
-source code format, as long as the copyright license is retained in
-the source code.
+https://docs.contiki-ng.org/en/develop/doc/getting-started/Toolchain-installation-on-Linux.html?highlight=git%20submodule%20#clone-contiki-ng
 
-Contiki-NG started as a fork of the Contiki OS and retains some of its original features.
+#### Remember to get the submodules:
+Compile Hello-World and run on native:
 
-Find out more:
+ https://docs.contiki-ng.org/en/develop/doc/tutorials/Hello%2C-World%21.html
 
-* GitHub repository: https://github.com/contiki-ng/contiki-ng
-* Documentation: https://docs.contiki-ng.org/
-* List of releases and changes: https://github.com/contiki-ng/contiki-ng/releases
-* Web site: http://contiki-ng.org
+#### Compile Hello-World for CC2650
+Be at the HelloWorld directory, then use the following command:
 
-Engage with the community:
+	$ make TARGET=cc26x0-cc13x0 BOARD=launchpad/cc2650
 
-* Discussions on GitHub: https://github.com/contiki-ng/contiki-ng/discussions
-* Contiki-NG tag on Stack Overflow: https://stackoverflow.com/questions/tagged/contiki-ng
-* Gitter: https://gitter.im/contiki-ng
-* Twitter: https://twitter.com/contiki_ng
+#### Flashing LaunchPad:
+Install Uniflash on your Windows host OS 
+https://www.ti.com/tool/UNIFLASH
+
+Connect LaunchPad to PC using USB Cable
+
+Select the device from "Detected Device"
+
+"Browse" -> go to Hello World directory in your Linux image probably called 
+    
+    \\wsl.localhost\Ubuntu\<path to where you cloned contiki-ng repository>\<hello_world> 
+
+Make sure to display all file types as option in file viewer then choose "hello-world.cc26x0-cc13x0" "Load image"
+
+#### Talk with LaunchPad:
+
+Install PuTTy or similar serial program
+
+In PuTTy, choose Serial option
+
+Find the appropriate "Serial line" option by going to Windows Device Manager -> Ports (COM & LPT) -> XDS110 Class Application/User UART
+
+Then enter the COM# found above (for me it was, COM6).
+Baudrate = 115200
+
+Now you should be able to see the Terminal printing "Hello, World"
+
+
+
+	
