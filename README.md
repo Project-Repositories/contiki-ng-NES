@@ -12,7 +12,7 @@ Also install the ARM Compiler by add to the working-directory
     gcc-arm-none-eabi-9-2020-q2-update/bin to your path.
 
 #### Clone Contiki-NG at a chosen directory
-** FOR THIS PROJECT, YOU SHOULD CLONE THIS REPOSITORY, AS WE ARE MAKING THE MODIFICATIONS HERE. DO NOT CLONE THE OFFICIAL CONTIKI-NG REPOSITORY.**
+**FOR THIS PROJECT, YOU SHOULD CLONE THIS REPOSITORY, AS WE ARE MAKING THE MODIFICATIONS HERE. DO NOT CLONE THE OFFICIAL CONTIKI-NG REPOSITORY.**
 
 A great speedup in compliation happens if the Github Repository is cloned to a subdirectory in your Ubuntu VM, compared to mounting the windows directory and running wsl through that
 
