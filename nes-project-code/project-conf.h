@@ -86,3 +86,9 @@
 #define TSCH_LOG_CONF_PER_SLOT                     1
 
 #endif /* PROJECT_CONF_H_ */
+
+
+// IMPORTANT: Speeds up the time to join the network
+#define TSCH_CONF_DEFAULT_HOPPING_SEQUENCE TSCH_HOPPING_SEQUENCE_2_2
+#define TSCH_CONF_EB_PERIOD (10 * CLOCK_SECOND)
+#define TSCH_CONF_ASSOCIATION_POLL_FREQUENCY 1000

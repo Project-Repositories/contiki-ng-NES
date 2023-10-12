@@ -129,7 +129,7 @@ PROCESS_THREAD(node_process, ev, data)
 
   while(1) {
       uip_ipaddr_t dest_ipaddr;
-      if(NETSTACK_ROUTING.node_is_reachable() && NETSTACK_ROUTING.get_root_ipaddr(&dest_ipaddr)) {
+      if(NETSTACK_ROUTING.node_is_reachable() && NETSTACK_ROUTING.  (&dest_ipaddr)) {
         join_ring(&dest_ipaddr);
       }
 
