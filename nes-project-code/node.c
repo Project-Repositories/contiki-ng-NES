@@ -37,7 +37,7 @@
  */
 
 #include "contiki.h"
-#include "packet-format.h"
+// #include "packet-format.h"
 #include "sys/node-id.h"
 #include "sys/log.h"
 #include "net/ipv6/uip-ds6-route.h"
@@ -51,6 +51,15 @@
 #include "tcp-socket.h"
 
 #define TCP_PORT_ROOT 8080
+
+#define INPUTBUFFER_SIZE 1028
+#define OUTPUTBUFFER_SIZE 1028
+static uint8_t inputbuffer[INPUTBUFFER_SIZE];
+static uint8_t outputbuffer[OUTPUTBUFFER_SIZE];
+
+
+
+
 
 // TCP Documentation
 
@@ -86,7 +95,7 @@ bool is_in_ring() {
 void join_ring(uip_ipaddr_t *dest_ipaddr)
 {
   struct tcp_socket out;
-  tcp_socket_register(&out, NULL, NULL, 0, NULL, 0, NULL, NULL);
+  tcp_socket_register(&out,NULL,inputbuffer, sizeof(inputbuffer), outputbuffer, sizeof(outputbuffer),0, NULL);
   int res = tcp_socket_connect(&out, dest_ipaddr, TCP_PORT_ROOT);
   if (res == -1)
   {
@@ -108,15 +117,6 @@ void join_ring(uip_ipaddr_t *dest_ipaddr)
   // Listen, wait to be contacted by its predecessor.
 }
 
-void listen_for_connections()
-{
-  struct tcp_socket in;
-  tcp_socket_register(&in, NULL, NULL, 0, NULL, 0, NULL, &connect_callback);
-
-  // the event callback will be called with the TCP_SOCKET_CONNECTED event
-  tcp_socket_listen(&in, TCP_PORT_ROOT);
-}
-
 void connect_callback(struct tcp_socket *s, void *ptr, tcp_socket_event_t event)
 {
   if (event != TCP_SOCKET_CONNECTED)
@@ -125,8 +125,17 @@ void connect_callback(struct tcp_socket *s, void *ptr, tcp_socket_event_t event)
     return;
   }
 
-  printf("RECEIVED A CONNECTION!!")
+  printf("RECEIVED A CONNECTION!!");
 }
+
+void listen_for_connections()
+{
+  struct tcp_socket in;
+  tcp_socket_register(&in,NULL, inputbuffer, sizeof(inputbuffer), outputbuffer, sizeof(outputbuffer),NULL, &connect_callback);
+  // the event callback will be called with the TCP_SOCKET_CONNECTED event
+  tcp_socket_listen(&in, TCP_PORT_ROOT);
+}
+
 
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(node_process, ev, data)
@@ -148,7 +157,7 @@ PROCESS_THREAD(node_process, ev, data)
   // root is not supposed to run this
   while (!NETSTACK_ROUTING.node_is_root())
   {
-    if (NETSTACK_ROUTING.node_is_reachable() && NETSTACK_ROUTING.(&dest_ipaddr))
+    if (NETSTACK_ROUTING.node_is_reachable() && NETSTACK_ROUTING.get_root_ipaddr(&dest_ipaddr))
     {
       join_ring(&dest_ipaddr);
       break;
