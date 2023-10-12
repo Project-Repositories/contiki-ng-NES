@@ -12,7 +12,7 @@
             "intelliSenseMode": "linux-gcc-x64"
         },
         {
-            "name": "ContikiNG",
+            "name": "ContikiNGAugust",
             "includePath": [
                 "/home/august/NES_Project/contiki-ng-NES/nes-project-code/**",
                 "/home/august/NES_Project/contiki-ng-NES/os/**",
