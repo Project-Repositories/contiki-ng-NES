@@ -3,7 +3,7 @@ all: $(CONTIKI_PROJECT)
 
 PLATFORMS_EXCLUDE = sky native
 
-CONTIKI=../contiki-ng-NES
+CONTIKI=..
 
  # force Orchestra from command line
 MAKE_WITH_ORCHESTRA ?= 0

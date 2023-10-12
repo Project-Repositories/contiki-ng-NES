@@ -36,7 +36,9 @@
  * \author Simon Duquennoy <simonduq@sics.se>
  */
 
+
 #include "contiki.h"
+
 #include "sys/node-id.h"
 #include "sys/log.h"
 #include "net/ipv6/uip-ds6-route.h"
@@ -47,38 +49,113 @@
 #define DEBUG DEBUG_PRINT
 #include "net/ipv6/uip-debug.h"
 
+#include "tcp-socket.h"
+
+#define TCP_PORT_ROOT 8080
+
+// TCP Documentation
+
 /*---------------------------------------------------------------------------*/
 PROCESS(node_process, "RPL Node");
 AUTOSTART_PROCESSES(&node_process);
 
+
+// Get Hardware ID somehow - retrieve from header file?
+// We could use MAC address to determine which node serves as the root/coordinator.
+// or maybe develop a new custom shell command 
+// shell_command_set_register(custom_shell_command_set);
+
+
+
+
+/*
+// Ring topology:
+typedef struct Node{
+  uint8_t id;
+  const uip_ipaddr_t ip;
+} Node;
+
+Node predecessor;
+Node successor;
+
+
+bool is_in_ring() {
+  return &predecessor != NULL && &successor != NULL;
+} 
+*/
+
+
+// Node struct is (id,ip)
+// Node succesor (id,ip)
+// Node predecessor (id,ip)
+
+void join_ring(uip_ipaddr_t *dest_ipaddr) {
+    struct tcp_socket out;
+    tcp_socket_register(&out,NULL, NULL, 0, NULL, 0, NULL, NULL);
+    int res = tcp_socket_connect(&out, dest_ipaddr, TCP_PORT_ROOT);
+    if (res==-1) {
+      printf("failure1");
+      return;
+    }
+
+    char test[] = "test";
+    uint8_t *dataptr = (uint8_t*)&test; 
+    res = tcp_socket_send(&out,dataptr,sizeof(test));
+    if (res==-1) {
+      printf("failure2");
+    }
+    printf("success!!!");
+    
+
+    // Send a "join" packet to the known_node (the root)
+    // open a TCP socket at its own IP address
+    // Listen, wait to be contacted by its predecessor.     
+}
+
+
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(node_process, ev, data)
 {
+  
+  static struct etimer timer;
+
   PROCESS_BEGIN();
-#if CONTIKI_TARGET_COOJA || CONTIKI_TARGET_Z1
-  if(node_id == 1) { /* Coordinator node. */
-    NETSTACK_ROUTING.root_start();
-  }
-#endif
+
+  /* Setup a periodic timer that expires after 10 seconds. */
+  etimer_set(&timer, CLOCK_SECOND * 10);
+
   NETSTACK_MAC.on();
 
-#if WITH_PERIODIC_ROUTES_PRINT
-  static struct etimer et;
-  /* Print out routing tables every minute */
-  etimer_set(&et, CLOCK_SECOND * 60);
+
   while(1) {
-    /* Used for non-regression testing */
-    #if (UIP_MAX_ROUTES != 0)
-      PRINTF("Routing entries: %u\n", uip_ds6_route_num_routes());
-    #endif
-    #if (UIP_SR_LINK_NUM != 0)
-      PRINTF("Routing links: %u\n", uip_sr_num_nodes());
-    #endif
-    PROCESS_YIELD_UNTIL(etimer_expired(&et));
-    etimer_reset(&et);
+      uip_ipaddr_t dest_ipaddr;
+      if(NETSTACK_ROUTING.node_is_reachable() && NETSTACK_ROUTING.get_root_ipaddr(&dest_ipaddr)) {
+        join_ring(&dest_ipaddr);
+      }
+
+    /* Wait for the periodic timer to expire and then restart the timer. */
+    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
+    etimer_reset(&timer);
   }
-#endif /* WITH_PERIODIC_ROUTES_PRINT */
+
 
   PROCESS_END();
 }
+
+
+
+
+/*
+void stabilize()
+
+void handle_tcp_message(packet )
+    // JOIN1: initial packet from node wanting to join the ring network
+    // JOIN2: packet from root node to predecessor of new node
+    // JOIN3: packet from predecessor to new node
+
+    // stabilize
+*/
+
+
+
 /*---------------------------------------------------------------------------*/

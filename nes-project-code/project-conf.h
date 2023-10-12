@@ -35,6 +35,9 @@
 #ifndef PROJECT_CONF_H_
 #define PROJECT_CONF_H_
 
+
+#define UIP_CONF_TCP 1
+
 /* Set to enable TSCH security */
 #ifndef WITH_SECURITY
 #define WITH_SECURITY 0
