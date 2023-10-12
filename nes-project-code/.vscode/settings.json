@@ -1,8 +1,0 @@
-{
-    "files.associations": {
-        "contiki.h": "c",
-        "contiki-conf.h": "c",
-        "contiki-default-conf.h": "c",
-        "tcp-socket.h": "c"
-    }
-}
