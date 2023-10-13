@@ -57,10 +57,6 @@
 static uint8_t inputbuffer[INPUTBUFFER_SIZE];
 static uint8_t outputbuffer[OUTPUTBUFFER_SIZE];
 
-
-
-
-
 // TCP Documentation
 
 /*---------------------------------------------------------------------------*/
@@ -95,7 +91,7 @@ bool is_in_ring() {
 void join_ring(uip_ipaddr_t *dest_ipaddr)
 {
   struct tcp_socket out;
-  tcp_socket_register(&out,NULL,inputbuffer, sizeof(inputbuffer), outputbuffer, sizeof(outputbuffer),0, NULL);
+  tcp_socket_register(&out, NULL, inputbuffer, sizeof(inputbuffer), outputbuffer, sizeof(outputbuffer), 0, NULL);
   int res = tcp_socket_connect(&out, dest_ipaddr, TCP_PORT_ROOT);
   if (res == -1)
   {
@@ -117,25 +113,34 @@ void join_ring(uip_ipaddr_t *dest_ipaddr)
   // Listen, wait to be contacted by its predecessor.
 }
 
-void connect_callback(struct tcp_socket *s, void *ptr, tcp_socket_event_t event)
+static void connect_callback(struct tcp_socket *s, void *ptr, tcp_socket_event_t event)
 {
+
+  printf("\n\n\n\n>>>>>>>>>called connect callback.>>>>>>>>>\n\n\n\n");
+
   if (event != TCP_SOCKET_CONNECTED)
   {
-    printf("Error");
+    printf("\n\n >>>>>>>>>>>>>>>>>>>> Error >>>>>>>>>>>>>>>>>>>>>\n");
     return;
   }
 
-  printf("RECEIVED A CONNECTION!!");
+  printf("\n\n>>>>>>>> RECEIVED A CONNECTION!! >>>>>>>>>>>\n\n");
+  return;
 }
 
 void listen_for_connections()
 {
+  printf("\n\n>>>>>>>>>>> listen_for_connections >>>>>>>>>>>>\n\n");
   struct tcp_socket in;
-  tcp_socket_register(&in,NULL, inputbuffer, sizeof(inputbuffer), outputbuffer, sizeof(outputbuffer),NULL, &connect_callback);
+  int succ = tcp_socket_register(&in, NULL, inputbuffer, sizeof(inputbuffer), outputbuffer, sizeof(outputbuffer), NULL, connect_callback);
   // the event callback will be called with the TCP_SOCKET_CONNECTED event
-  tcp_socket_listen(&in, TCP_PORT_ROOT);
-}
 
+  printf("\n\n>>>>>>>>>>> socket registered %d >>>>>>>>>>>>\n\n", succ);
+
+  succ = tcp_socket_listen(&in, TCP_PORT_ROOT);
+
+  printf("\n\n>>>>>>>>>>> listen setup %d>>>>>>>>>>>>\n\n", succ);
+}
 
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(node_process, ev, data)
@@ -146,12 +151,15 @@ PROCESS_THREAD(node_process, ev, data)
   PROCESS_BEGIN();
 
   /* Setup a periodic timer that expires after 10 seconds. */
-  etimer_set(&timer, CLOCK_SECOND * 10);
+  etimer_set(&timer, CLOCK_SECOND * 1000000);
 
+  NETSTACK_ROUTING.root_start();
   NETSTACK_MAC.on();
 
   if (NETSTACK_ROUTING.node_is_root())
+  {
     listen_for_connections();
+  }
 
   uip_ipaddr_t dest_ipaddr;
   // root is not supposed to run this
@@ -162,9 +170,14 @@ PROCESS_THREAD(node_process, ev, data)
       join_ring(&dest_ipaddr);
       break;
     }
+
+    /* Wait for the periodic timer to expire and then restart the timer. */
+    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
+    etimer_reset(&timer);
   }
 
-  /* Wait for the periodic timer to expire and then restart the timer. */
+  printf("\n\n\n\n>>>>>>>>>>END <<<<<<<<<<<<< \n\n\n");
+  // for root
   PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
   etimer_reset(&timer);
 
