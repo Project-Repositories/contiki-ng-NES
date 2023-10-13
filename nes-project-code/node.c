@@ -36,9 +36,8 @@
  * \author Simon Duquennoy <simonduq@sics.se>
  */
 
-
 #include "contiki.h"
-#include "packet-format.h"
+// #include "packet-format.h"
 #include "sys/node-id.h"
 #include "sys/log.h"
 #include "net/ipv6/uip-ds6-route.h"
@@ -59,14 +58,10 @@
 PROCESS(node_process, "RPL Node");
 AUTOSTART_PROCESSES(&node_process);
 
-
 // Get Hardware ID somehow - retrieve from header file?
 // We could use MAC address to determine which node serves as the root/coordinator.
-// or maybe develop a new custom shell command 
+// or maybe develop a new custom shell command
 // shell_command_set_register(custom_shell_command_set);
-
-
-
 
 /*
 // Ring topology:
@@ -81,42 +76,64 @@ Node successor;
 
 bool is_in_ring() {
   return &predecessor != NULL && &successor != NULL;
-} 
+}
 */
-
 
 // Node struct is (id,ip)
 // Node succesor (id,ip)
 // Node predecessor (id,ip)
 
-void join_ring(uip_ipaddr_t *dest_ipaddr) {
-    struct tcp_socket out;
-    tcp_socket_register(&out,NULL, NULL, 0, NULL, 0, NULL, NULL);
-    int res = tcp_socket_connect(&out, dest_ipaddr, TCP_PORT_ROOT);
-    if (res==-1) {
-      printf("failure1");
-      return;
-    }
+void join_ring(uip_ipaddr_t *dest_ipaddr)
+{
+  struct tcp_socket out;
+  tcp_socket_register(&out, NULL, NULL, 0, NULL, 0, NULL, NULL);
+  int res = tcp_socket_connect(&out, dest_ipaddr, TCP_PORT_ROOT);
+  if (res == -1)
+  {
+    printf("failure1");
+    return;
+  }
 
-    char test[] = "test";
-    uint8_t *dataptr = (uint8_t*)&test; 
-    res = tcp_socket_send(&out,dataptr,sizeof(test));
-    if (res==-1) {
-      printf("failure2");
-    }
-    printf("success!!!");
-    
+  char test[] = "test";
+  uint8_t *dataptr = (uint8_t *)&test;
+  res = tcp_socket_send(&out, dataptr, sizeof(test));
+  if (res == -1)
+  {
+    printf("failure2");
+  }
+  printf("success!!!");
 
-    // Send a "join" packet to the known_node (the root)
-    // open a TCP socket at its own IP address
-    // Listen, wait to be contacted by its predecessor.     
+  // Send a "join" packet to the known_node (the root)
+  // open a TCP socket at its own IP address
+  // Listen, wait to be contacted by its predecessor.
 }
+
+void connect_callback(struct tcp_socket *s, void *ptr, tcp_socket_event_t event)
+{
+  if (event != TCP_SOCKET_CONNECTED)
+  {
+    printf("Error");
+    return;
+  }
+
+  printf("RECEIVED A CONNECTION!!");
+}
+
+void listen_for_connections()
+{
+  struct tcp_socket in;
+  tcp_socket_register(&in, NULL, NULL, 0, NULL, 0, NULL, &connect_callback);
+
+  // the event callback will be called with the TCP_SOCKET_CONNECTED event
+  tcp_socket_listen(&in, TCP_PORT_ROOT);
+}
+
 
 
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(node_process, ev, data)
 {
-  
+
   static struct etimer timer;
 
   PROCESS_BEGIN();
@@ -126,24 +143,26 @@ PROCESS_THREAD(node_process, ev, data)
 
   NETSTACK_MAC.on();
 
+  if (NETSTACK_ROUTING.node_is_root())
+    listen_for_connections();
 
-  while(1) {
-      uip_ipaddr_t dest_ipaddr;
-      if(NETSTACK_ROUTING.node_is_reachable() && NETSTACK_ROUTING.  (&dest_ipaddr)) {
-        join_ring(&dest_ipaddr);
-      }
-
-    /* Wait for the periodic timer to expire and then restart the timer. */
-    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
-    etimer_reset(&timer);
+  uip_ipaddr_t dest_ipaddr;
+  // root is not supposed to run this
+  while (!NETSTACK_ROUTING.node_is_root())
+  {
+    if (NETSTACK_ROUTING.node_is_reachable() && NETSTACK_ROUTING.get_root_ipaddr(&dest_ipaddr))
+    {
+      join_ring(&dest_ipaddr);
+      break;
+    }
   }
 
+  /* Wait for the periodic timer to expire and then restart the timer. */
+  PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
+  etimer_reset(&timer);
 
   PROCESS_END();
 }
-
-
-
 
 /*
 void stabilize()
@@ -155,7 +174,5 @@ void handle_tcp_message(packet )
 
     // stabilize
 */
-
-
 
 /*---------------------------------------------------------------------------*/
