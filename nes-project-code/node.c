@@ -38,13 +38,14 @@
 
 
 #include "contiki.h"
-#include "packet-format.h"
+#include "msg-format.h"
 #include "sys/node-id.h"
 #include "sys/log.h"
 #include "net/ipv6/uip-ds6-route.h"
 #include "net/ipv6/uip-sr.h"
 #include "net/mac/tsch/tsch.h"
 #include "net/routing/routing.h"
+#include "uip.h"
 
 #define DEBUG DEBUG_PRINT
 #include "net/ipv6/uip-debug.h"
@@ -52,65 +53,200 @@
 #include "tcp-socket.h"
 
 #define TCP_PORT_ROOT 8080
+#define TCP_PORT_IN 8091
+#define TCP_PORT_OUT 8092
+//DEFINE NODE
+#define IS_ROOT true
+// buffers
+#define BUFSIZE sizeof(Ring_msg)
+static uint8_t inputbuf[BUFSIZE];
+static uint8_t outputbuf[BUFSIZE];
+// sockets
+static struct tcp_socket socket_in;
+static struct tcp_socket socket_out;
+#if IS_ROOT
+  static struct tcp_socket root_socket;
+  #define VALID_RING() (socket_out.c != NULL)
+#endif
+
 
 // TCP Documentation
 
 /*---------------------------------------------------------------------------*/
 PROCESS(node_process, "RPL Node");
-AUTOSTART_PROCESSES(&node_process);
+PROCESS(msg_sender, "MSG sender");
+PROCESS(root_process, "RPL Root");
+#if IS_ROOT
+  AUTOSTART_PROCESSES(&node_process);
+#else
+  AUTOSTART_PROCESSES(&node_process);
+#endif
 
+static int sem = 0;
 
 // Get Hardware ID somehow - retrieve from header file?
 // We could use MAC address to determine which node serves as the root/coordinator.
 // or maybe develop a new custom shell command 
 // shell_command_set_register(custom_shell_command_set);
 
+// if node is root make gen
+static int id;
+static int id_next;
+int gen_id(){
+  //for now return static id
+  return 2;
+}
 
 
 
-/*
-// Ring topology:
-typedef struct Node{
-  uint8_t id;
-  const uip_ipaddr_t ip;
-} Node;
-
-Node predecessor;
-Node successor;
 
 
-bool is_in_ring() {
-  return &predecessor != NULL && &successor != NULL;
-} 
-*/
+/*    callback functions    */
 
+void event_callback(struct tcp_socket *s, void *ptr, tcp_socket_event_t event){
+
+    switch (event)
+    {
+    case TCP_SOCKET_CONNECTED:
+      PRINTF("EVENT: TCP_SOCKET_CONNECTED");
+      break;
+    case TCP_SOCKET_CLOSED:
+      PRINTF("EVENT: TCP_SOCKET_CLOSED");
+      /* code */
+      break;
+    case TCP_SOCKET_TIMEDOUT:
+      PRINTF("EVENT: TCP_SOCKET_TIMEDOUT");
+      /* code */
+      break;
+    case TCP_SOCKET_ABORTED:
+      PRINTF("EVENT: TCP_SOCKET_ABORTED");
+      /* code */
+      break;
+    case TCP_SOCKET_DATA_SENT:
+      PRINTF("EVENT: TCP_SOCKET_DATA_SENT");
+      /* code */
+      break;
+    default:
+      PRINTF("EVENT: ERROR_UNKOWN_EVENT");
+      break;
+    }
+
+}
+
+int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr, int input_data_len){
+    // Think it should just consume data directly?
+    Ring_msg* msg = (Ring_msg*)input_data_ptr;
+    switch (msg->hdr.msg_type)
+        {
+        case PASS_IP: ;
+          /* code */
+          
+          uint8_t Id1 = msg->Ip_msg.Id1;
+
+          // pass message
+          if (Id1 > id_next){
+              tcp_socket_send(&socket_out, (uint8_t* )msg, sizeof(Ip_msg));
+              break;
+          }
+          // else: insert node
+          while(tcp_socket_close(&socket_out)== -1){
+            PRINTF("ERROR: couldnt close socket out...");
+          }
+
+
+
+          break;
+        case DROP:
+          /* code */
+          break;
+        case JOIN_SUCC: ;
+          Ip_msg* ipMsg = (Ip_msg*) input_data_ptr;
+
+          // connect to next node
+          while(tcp_socket_connect(&socket_out, &ipMsg->ipaddr, TCP_PORT_IN)){
+              PRINTF("TCP socket OUT connection failed...");
+          }
+          PRINTF("TCP socket connection succeeded!");
+          id = ipMsg->Id1;
+          id_next = ipMsg->Id2;
+
+          break;
+        case JOIN_PRE:
+          /* code */
+          break;
+        case ELECTION:
+          /* code */
+          break;
+        case ELECTED:
+          /* code */
+          break;
+      #if IS_ROOT
+        case REQUEST:
+          // must be root
+          PRINTF("Recieved 'REQUEST' message...");
+          if (VALID_RING()){
+              // Construct pass message
+              Ip_msg* new_msg = (Ip_msg*) inputbuf;
+              new_msg->hdr.msg_type = PASS_IP;
+              new_msg->Id1 = 2; // random id
+              memcpy(&new_msg->ipaddr, &msg->Ip_msg.ipaddr, sizeof(uip_ipaddr_t));
+              
+              /* send message on outcomming socket */
+              while(tcp_socket_send(&socket_out, (uint8_t*)new_msg, sizeof(Ip_msg))==-1){
+                PRINTF("ERROR: sending message to first node failed...");
+              }
+              PRINTF("Succesfully send PASS_IP message to first node!");
+
+          }
+          else{
+            // try and connect to first node
+            while(tcp_socket_connect(&socket_out, &(msg->Ip_msg.ipaddr),TCP_PORT_IN) == -1){
+              PRINTF("TCP socket connection failed...");
+            }
+            PRINTF("TCP socket connection succeeded!");
+  
+            //put new message into input buffer
+            Ip_msg new_msg;
+            new_msg.hdr.msg_type = JOIN_SUCC;
+            new_msg.Id1 = 2; // random id
+            new_msg.Id2 = id; // self id
+
+            //store id for next node
+            id_next = new_msg.Id1;
+            memcpy(&new_msg.ipaddr, &root_socket.c->ripaddr, sizeof(uip_ipaddr_t));
+            while(tcp_socket_send(&socket_out, (uint8_t*)&new_msg, sizeof(Ip_msg))==-1){
+                PRINTF("ERROR: sending message to first node failed...");
+            }
+            PRINTF("Succesfully send join message to first node!");
+
+
+            // Close root socket, to allow other nodes to join
+            while(tcp_socket_close(&root_socket) == -1){
+              PRINTF("ERROR: failed to close 'root' socket");
+            }
+            PRINTF("Root socket connection closed...");
+           
+            sem = 1; /* something is in buffer*/
+
+          }
+
+
+          break;
+      #endif
+        default:
+          PRINTF("UNDEFINED MESSAG HDR: %d \n", msg->hdr.msg_type);
+          break;
+        }
+
+
+    return 0;
+}
+/*--------------------------------------------*/
 
 // Node struct is (id,ip)
 // Node succesor (id,ip)
 // Node predecessor (id,ip)
 
-void join_ring(uip_ipaddr_t *dest_ipaddr) {
-    struct tcp_socket out;
-    tcp_socket_register(&out,NULL, NULL, 0, NULL, 0, NULL, NULL);
-    int res = tcp_socket_connect(&out, dest_ipaddr, TCP_PORT_ROOT);
-    if (res==-1) {
-      printf("failure1");
-      return;
-    }
-
-    char test[] = "test";
-    uint8_t *dataptr = (uint8_t*)&test; 
-    res = tcp_socket_send(&out,dataptr,sizeof(test));
-    if (res==-1) {
-      printf("failure2");
-    }
-    printf("success!!!");
-    
-
-    // Send a "join" packet to the known_node (the root)
-    // open a TCP socket at its own IP address
-    // Listen, wait to be contacted by its predecessor.     
-}
 
 
 /*---------------------------------------------------------------------------*/
@@ -121,18 +257,46 @@ PROCESS_THREAD(node_process, ev, data)
 
   PROCESS_BEGIN();
 
+  NETSTACK_MAC.on();
+  
+  // register sockets
+  while (-1 == tcp_socket_register(&socket_in, NULL, inputbuf, sizeof(inputbuf),NULL,0,data_callback,event_callback)){
+        PRINTF("ERROR: Socket registration 'IN' failed...");
+  }
+  while (-1 == tcp_socket_register(&socket_in, NULL, NULL,0, outputbuf, sizeof(outputbuf),data_callback,event_callback)){
+        PRINTF("ERROR: Socket registration 'OUT' failed...");
+  }
+  PRINTF("Sockets registered successfully!");
+  uip_ipaddr_t dest_ipaddr;
+  while(!NETSTACK_ROUTING.node_has_joined || !NETSTACK_ROUTING.get_root_ipaddr(&dest_ipaddr)){
+        PRINTF("ERROR: Node could not recieve 'root' IP...");
+  }
+  while (-1 ==tcp_socket_listen(&socket_in, TCP_PORT_IN)){
+        PRINTF("ERROR: In socket failed to listen");
+  }
+  PRINTF("Node sending join message...");
+  
+  while(tcp_socket_connect(&socket_out, &dest_ipaddr, TCP_PORT_ROOT) == -1){
+      PRINTF("ERROR: failed to connect to root...");
+  }
+  PRINTF("Nod connected to root!");
+
+  /* Create request message */
+  Header msg;
+  msg.msg_type = REQUEST;
+  while(tcp_socket_send(&socket_out, (uint8_t*)&msg, sizeof(Header)) == -1){
+      PRINTF("ERROR: failed to send REQUEST message");
+  }
+  PRINTF("Node sending join message succesfully!");
+
+
   /* Setup a periodic timer that expires after 10 seconds. */
   etimer_set(&timer, CLOCK_SECOND * 10);
 
-  NETSTACK_MAC.on();
+  
 
-
-  while(1) {
-      uip_ipaddr_t dest_ipaddr;
-      if(NETSTACK_ROUTING.node_is_reachable() && NETSTACK_ROUTING.  (&dest_ipaddr)) {
-        join_ring(&dest_ipaddr);
-      }
-
+  while(1) {   
+    PRINTF("Node is idle...");   
     /* Wait for the periodic timer to expire and then restart the timer. */
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
     etimer_reset(&timer);
@@ -141,21 +305,74 @@ PROCESS_THREAD(node_process, ev, data)
 
   PROCESS_END();
 }
+/*---------------------------------------------------------------------------*/
+PROCESS_THREAD(root_process, env, data){ 
+  static struct etimer timer;
+
+  PROCESS_BEGIN();
+
+  NETSTACK_ROUTING.root_start();
+  NETSTACK_MAC.on();
+
+  // register sockets
+  while (-1 == tcp_socket_register(&socket_in, NULL, inputbuf, sizeof(inputbuf),NULL, 0,data_callback,event_callback)){
+        PRINTF("ERROR: Socket registration 'IN' failed...");
+  }
+  while (-1 == tcp_socket_register(&socket_in, NULL, NULL, 0, outputbuf, sizeof(outputbuf),data_callback,event_callback)){
+        PRINTF("ERROR: Socket registration 'OUT' failed...");
+  }
+  while (-1 == tcp_socket_register(&root_socket,NULL, inputbuf,sizeof(inputbuf), NULL, 0,data_callback, event_callback)){
+        PRINTF("ERROR: Socket registration 'ROOT' failed...");
+  }
+  PRINTF("Sockets registered successfully!");
+
+  while (-1 ==tcp_socket_listen(&root_socket, TCP_PORT_ROOT)){
+        PRINTF("ERROR: Root socket failed to listen");
+  }
+  while (-1 ==tcp_socket_listen(&socket_in, TCP_PORT_IN)){
+        PRINTF("ERROR: In socket failed to listen");
+  }
+  PRINTF("Root now listening for new nodes..");
+
+  /* Setup a periodic timer that expires after 10 seconds. */
+  etimer_set(&timer, CLOCK_SECOND * 10);
+
+  
+
+  while(1) {      
+    PRINTF("Root is idle...");
+    /* Wait for the periodic timer to expire and then restart the timer. */
+    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
+    etimer_reset(&timer);
+  }
 
 
+    PROCESS_END();
 
-
-/*
-void stabilize()
-
-void handle_tcp_message(packet )
-    // JOIN1: initial packet from node wanting to join the ring network
-    // JOIN2: packet from root node to predecessor of new node
-    // JOIN3: packet from predecessor to new node
-
-    // stabilize
-*/
+}
 
 
 
 /*---------------------------------------------------------------------------*/
+
+/* should send the messages from the inputbuffer*/
+PROCESS_THREAD(msg_sender, ev, data){
+
+  PROCESS_BEGIN();
+
+  while(1){
+    /* wait for something to handle in input buffer*/
+    PROCESS_YIELD_UNTIL(sem == 1);
+
+    /*
+      send a message forward in the ring
+    
+    */
+    sem = 0; // state that it is finished sending a message
+  }
+
+
+
+  PROCESS_END();
+}
+/*-------------------------------------------------------------------------*/

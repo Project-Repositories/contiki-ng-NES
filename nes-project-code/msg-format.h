@@ -1,13 +1,14 @@
 
 #include "uip.h"
 
+
 /* hdr id for message used to pass ip of a node trying to join the ring*/
 #define PASS_IP 1 // hdr | Ip | Id
 
 /* hdr id for messages used to tell node to drop its connection to its pred*/
 #define DROP 2 // hdr
 
-/* hdr id for messages used to connect to a node, and tell the noed what its new succor is*/
+/* hdr id for messages used to connect to a node, and tell the node what its new succor is*/
 #define JOIN_SUCC 3  // hdr | Ip | Id | Id
 
 /* hdr id for messages used to establish connection with the new pred*/
@@ -18,6 +19,13 @@
 
 /* hdr id for elected messages*/
 #define ELECTED 6 // hdr | Id
+
+/* hdr id for join request messages - ONLY FOR ROOT */
+#define REQUEST 7
+
+/* hdr id for Empty message */
+#define EMPTY 8
+
 
 typedef struct{
     uint8_t msg_type;
