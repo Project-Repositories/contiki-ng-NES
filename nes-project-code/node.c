@@ -139,7 +139,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
     // Think it should just consume data directly?
     
     Ring_msg* msg = (Ring_msg*)input_data_ptr;
-    PRINTF("DATA CALLBACK: %d", msg->hdr.msg_type);
+    PRINTF("DATA CALLBACK: %d, LENGTH: %d \n", msg->hdr.msg_type, input_data_len);
     switch (msg->hdr.msg_type)
         {
         case PASS_IP: ;
@@ -163,7 +163,11 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
         case DROP:
           /* code */
           break;
-        case JOIN_SUCC: ;
+        case JOIN_SUCC:
+          /* CHECK LENGTH */
+          if (input_data_len != sizeof(Ip_msg)){
+            PRINTF("JOIN_SUCC: INVALID DATA LENGTH %d \n", input_data_len);
+          }
           Ip_msg* ipMsg = (Ip_msg*) input_data_ptr;
 
           // connect to next node
@@ -210,19 +214,19 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
             PRINTF("TCP socket connection succeeded! \n");
   
             //put new message into input buffer
-            Ip_msg new_msg;
-            new_msg.hdr.msg_type = JOIN_SUCC;
-            new_msg.Id1 = 2; // random id
-            new_msg.Id2 = id; // self id
+            Ip_msg* new_msg = (Ip_msg*)malloc(sizeof(Ip_msg));
+            new_msg->hdr.msg_type = JOIN_SUCC;
+            new_msg->Id1 = 2; // random id
+            new_msg->Id2 = id; // self id
 
             //store id for next node
-            id_next = new_msg.Id1;
-            memcpy(&new_msg.ipaddr, &root_socket.c->ripaddr, sizeof(uip_ipaddr_t));
+            id_next = new_msg->Id1;
+            memcpy(&new_msg->ipaddr, &root_socket.c->ripaddr, sizeof(uip_ipaddr_t));
             while(tcp_socket_send(&socket_out, (uint8_t*)&new_msg, sizeof(Ip_msg))==-1){
                 PRINTF("ERROR: sending message to first node failed... \n");
             }
             PRINTF("Succesfully send join message to first node! \n");
-
+            free(new_msg);
 
             // Close root socket, to allow other nodes to join
             while(tcp_socket_close(&root_socket) == -1){
