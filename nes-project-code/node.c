@@ -56,7 +56,7 @@
 #define TCP_PORT_IN 8091
 #define TCP_PORT_OUT 8092
 //DEFINE NODE
-#define IS_ROOT false
+#define IS_ROOT true
 // buffers
 #define BUFSIZE sizeof(Ring_msg)
 static uint8_t inputbuf[BUFSIZE];
@@ -318,7 +318,7 @@ PROCESS_THREAD(node_process, ev, data)
 
 #if IS_ROOT
 
-PROCESS_THREAD(root_process, env, data){ 
+PROCESS_THREAD(root_process, ev, data){ 
   static struct etimer timer;
 
   PROCESS_BEGIN();
@@ -358,6 +358,7 @@ PROCESS_THREAD(root_process, env, data){
 
   while(1) {      
     PRINTF("Root is idle... \n");
+    PRINTF("RING STATUS: %d \n", VALID_RING());
     /* Wait for the periodic timer to expire and then restart the timer. */
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
     etimer_reset(&timer);
