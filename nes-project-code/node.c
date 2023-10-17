@@ -87,7 +87,6 @@ char socket_out_name[] = "socket_out";
   AUTOSTART_PROCESSES(&node_process);
 #endif
 
-static int sem = 0;
 
 // Get Hardware ID somehow - retrieve from header file?
 // We could use MAC address to determine which node serves as the root/coordinator.
@@ -181,6 +180,13 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
           id = ipMsg->Id1;
           id_next = ipMsg->Id2;
 
+            // Close root socket, to allow other nodes to join
+            while(tcp_socket_close(&socket_out) == -1){
+              PRINTF("ERROR: failed to close 'out' socket \n");
+            }
+            PRINTF("out socket connection closed... \n");
+           
+
           break;
         case JOIN_PRE:
           /* code */
@@ -218,29 +224,20 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
             PRINTF("TCP socket connection succeeded! \n");
   
             //put new message into input buffer
-            Ip_msg* new_msg = (Ip_msg*)malloc(sizeof(Ip_msg));
-            new_msg->hdr.msg_type = JOIN_SUCC;
-            new_msg->Id1 = 2; // random id
-            new_msg->Id2 = id; // self id
+            Ip_msg new_msg;
+            new_msg.hdr.msg_type = JOIN_SUCC;
+            new_msg.Id1 = 2; // random id
+            new_msg.Id2 = id; // self id
 
             //store id for next node
-            id_next = new_msg->Id1;
-            memcpy(&new_msg->ipaddr, &socket_root.c->ripaddr, sizeof(uip_ipaddr_t));
+            id_next = new_msg.Id1;
+            memcpy(&new_msg.ipaddr, &socket_root.c->ripaddr, sizeof(uip_ipaddr_t));
 
-            PRINTF("SENDING MESSAGE HDR: %d", new_msg->hdr.msg_type);
-            while(tcp_socket_send(&socket_out, (uint8_t*) new_msg, sizeof(Ip_msg))==-1){
+            PRINTF("SENDING MESSAGE HDR: %d", new_msg.hdr.msg_type);
+            while(tcp_socket_send(&socket_out, (uint8_t*) &new_msg, sizeof(Ip_msg))==-1){
                 PRINTF("ERROR: sending message to first node failed... \n");
             }
             PRINTF("Succesfully send join message to first node! \n");
-            free(new_msg);
-
-            // Close root socket, to allow other nodes to join
-            while(tcp_socket_close(&socket_root) == -1){
-              PRINTF("ERROR: failed to close 'root' socket \n");
-            }
-            PRINTF("Root socket connection closed... \n");
-           
-            sem = 1; /* something is in buffer*/
 
           }
 
@@ -274,11 +271,11 @@ PROCESS_THREAD(node_process, ev, data)
   NETSTACK_MAC.on();
   
   // register sockets
-  while (-1 == tcp_socket_register(&socket_in, NULL, inputbuf, sizeof(inputbuf),NULL,0,data_callback,event_callback)){
+  while (-1 == tcp_socket_register(&socket_in, &socket_in_name, inputbuf, sizeof(inputbuf),NULL,0,data_callback,event_callback)){
         PRINTF("ERROR: Socket registration 'IN' failed... \n");
         PROCESS_PAUSE();
   }
-  while (-1 == tcp_socket_register(&socket_out, NULL, NULL,0, outputbuf, sizeof(outputbuf),data_callback,event_callback)){
+  while (-1 == tcp_socket_register(&socket_out, &socket_out_name, NULL,0, outputbuf, sizeof(outputbuf),data_callback,event_callback)){
         PRINTF("ERROR: Socket registration 'OUT' failed... \n");
         PROCESS_PAUSE();
   }
