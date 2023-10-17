@@ -46,7 +46,7 @@
 #include "net/mac/tsch/tsch.h"
 #include "net/routing/routing.h"
 #include "uip.h"
-
+#include <stdlib.h>
 #define DEBUG DEBUG_PRINT
 #include "net/ipv6/uip-debug.h"
 
