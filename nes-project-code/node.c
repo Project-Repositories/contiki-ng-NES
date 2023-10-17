@@ -87,8 +87,6 @@ char socket_out_name[] = "socket_out";
   AUTOSTART_PROCESSES(&node_process);
 #endif
 
-static int sem = 0;
-
 // Get Hardware ID somehow - retrieve from header file?
 // We could use MAC address to determine which node serves as the root/coordinator.
 // or maybe develop a new custom shell command 
