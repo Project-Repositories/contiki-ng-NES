@@ -56,7 +56,7 @@
 #define TCP_PORT_IN 8091
 #define TCP_PORT_OUT 8092
 //DEFINE NODE
-#define IS_ROOT true
+#define IS_ROOT false
 // buffers
 #define BUFSIZE sizeof(Ring_msg)
 static uint8_t inputbuf[BUFSIZE];
