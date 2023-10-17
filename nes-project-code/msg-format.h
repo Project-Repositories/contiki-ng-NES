@@ -33,9 +33,9 @@ typedef struct{
 
 typedef struct{ 
     Header hdr;
-    uip_ipaddr_t ipaddr; 
     uint8_t Id1; // id 1
     uint8_t Id2; // id 2
+    uip_ipaddr_t ipaddr; 
 
 } Ip_msg;
 typedef struct{

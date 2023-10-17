@@ -141,7 +141,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
     // Think it should just consume data directly?
     
     Ring_msg* msg = (Ring_msg*)input_data_ptr;
-    PRINTF("DATA CALLBACK: %d, LENGTH: %d \n", msg->hdr.msg_type, input_data_len);
+    PRINTF("SOCKET %s | DATA CALLBACK: %d, LENGTH: %d \n", (char*) s->ptr, msg->hdr.msg_type, input_data_len);
     switch (msg->hdr.msg_type)
         {
         case PASS_IP: ;
@@ -218,6 +218,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
           }
           else{
             // try and connect to first node
+            PROCESS_CONTEXT_BEGIN(&root_process);
             while(tcp_socket_connect(&socket_out, &(msg->Ip_msg.ipaddr),TCP_PORT_IN) == -1){
               PRINTF("TCP socket connection failed... \n");
             }
@@ -238,7 +239,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
                 PRINTF("ERROR: sending message to first node failed... \n");
             }
             PRINTF("Succesfully send join message to first node! \n");
-
+            PROCESS_CONTEXT_END();
           }
 
 
@@ -382,4 +383,5 @@ PROCESS_THREAD(root_process, ev, data){
 /*---------------------------------------------------------------------------*/
 
 /* should send the messages from the inputbuffer*/
+
 /*-------------------------------------------------------------------------*/
