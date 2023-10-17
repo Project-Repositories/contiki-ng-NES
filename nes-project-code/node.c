@@ -56,7 +56,7 @@
 #define TCP_PORT_IN 8091
 #define TCP_PORT_OUT 8092
 //DEFINE NODE
-#define IS_ROOT true
+#define IS_ROOT false
 // buffers
 #define BUFSIZE sizeof(Ring_msg)
 static uint8_t inputbuf[BUFSIZE];
@@ -73,12 +73,14 @@ static struct tcp_socket socket_out;
 // TCP Documentation
 
 /*---------------------------------------------------------------------------*/
-PROCESS(node_process, "RPL Node");
+
 PROCESS(msg_sender, "MSG sender");
-PROCESS(root_process, "RPL Root");
+
 #if IS_ROOT
-  AUTOSTART_PROCESSES(&node_process);
+  PROCESS(root_process, "RPL Root");
+  AUTOSTART_PROCESSES(&root_process);
 #else
+  PROCESS(node_process, "RPL Node");
   AUTOSTART_PROCESSES(&node_process);
 #endif
 
@@ -247,7 +249,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
 // Node succesor (id,ip)
 // Node predecessor (id,ip)
 
-
+#if !IS_ROOT
 
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(node_process, ev, data)
@@ -306,6 +308,10 @@ PROCESS_THREAD(node_process, ev, data)
   PROCESS_END();
 }
 /*---------------------------------------------------------------------------*/
+#endif //!IS_ROOT
+
+#if IS_ROOT
+
 PROCESS_THREAD(root_process, env, data){ 
   static struct etimer timer;
 
@@ -350,8 +356,7 @@ PROCESS_THREAD(root_process, env, data){
     PROCESS_END();
 
 }
-
-
+#endif // IS_ROOT
 
 /*---------------------------------------------------------------------------*/
 
