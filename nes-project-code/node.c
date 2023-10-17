@@ -103,6 +103,7 @@ void join_ring(uip_ipaddr_t *dest_ipaddr) {
     res = tcp_socket_send(&out,dataptr,sizeof(test));
     if (res==-1) {
       printf("failure2");
+      return;
     }
     printf("success!!!");
     
