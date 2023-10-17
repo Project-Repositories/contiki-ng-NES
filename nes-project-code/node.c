@@ -109,7 +109,7 @@ int gen_id(){
 /*    callback functions    */
 
 void event_callback(struct tcp_socket *s, void *ptr, tcp_socket_event_t event){
-    PRINTF("SOCKET: %s | ", (char*)s->ptr);
+    PRINTF("SOCKET: %s | ", (char *)s->ptr);
     switch (event)
     {
     case TCP_SOCKET_CONNECTED:
@@ -203,7 +203,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
               memcpy(&new_msg->ipaddr, &msg->Ip_msg.ipaddr, sizeof(uip_ipaddr_t));
               
               /* send message on outcomming socket */
-              PRINTF("SENDING MESSAGE HDR: %d", new_msg->hdr.msg_type);
+              PRINTF("SENDING MESSAGE HDR: %d \n", new_msg->hdr.msg_type);
               while(tcp_socket_send(&socket_out, (uint8_t*)new_msg, sizeof(Ip_msg))==-1){
                 PRINTF("ERROR: sending message to first node failed... \n");
               }
@@ -339,15 +339,15 @@ PROCESS_THREAD(root_process, ev, data){
   NETSTACK_MAC.on();
 
   // register sockets
-  while (-1 == tcp_socket_register(&socket_in, NULL, inputbuf, sizeof(inputbuf),NULL, 0,data_callback,event_callback)){
+  while (-1 == tcp_socket_register(&socket_in, &socket_in_name, inputbuf, sizeof(inputbuf),NULL, 0,data_callback,event_callback)){
         PRINTF("ERROR: Socket registration 'IN' failed... \n");
         PROCESS_PAUSE();
   }
-  while (-1 == tcp_socket_register(&socket_out, NULL, NULL, 0, outputbuf, sizeof(outputbuf),data_callback,event_callback)){
+  while (-1 == tcp_socket_register(&socket_out, &socket_out_name, NULL, 0, outputbuf, sizeof(outputbuf),data_callback,event_callback)){
         PRINTF("ERROR: Socket registration 'OUT' failed... \n");
         PROCESS_PAUSE();
   }
-  while (-1 == tcp_socket_register(&socket_root,NULL, rootbuf,sizeof(rootbuf), NULL, 0,data_callback, event_callback)){
+  while (-1 == tcp_socket_register(&socket_root,&socket_root_name, rootbuf,sizeof(rootbuf), NULL, 0,data_callback, event_callback)){
         PRINTF("ERROR: Socket registration 'ROOT' failed... \n");
         PROCESS_PAUSE();
   }
