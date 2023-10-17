@@ -272,7 +272,7 @@ PROCESS_THREAD(node_process, ev, data)
   }
   PRINTF("Sockets registered successfully!");
   uip_ipaddr_t dest_ipaddr;
-  while(!NETSTACK_ROUTING.node_has_joined || !NETSTACK_ROUTING.get_root_ipaddr(&dest_ipaddr)){
+  while(!NETSTACK_ROUTING.node_is_reachable || !NETSTACK_ROUTING.get_root_ipaddr(&dest_ipaddr)){
         PRINTF("ERROR: Node could not recieve 'root' IP... \n");
         PROCESS_PAUSE();
   }
