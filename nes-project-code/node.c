@@ -56,7 +56,7 @@
 #define TCP_PORT_IN 8091
 #define TCP_PORT_OUT 8092
 //DEFINE NODE
-#define IS_ROOT true
+#define IS_ROOT false
 // buffers
 #define BUFSIZE sizeof(Ring_msg)
 static uint8_t inputbuf[BUFSIZE];
@@ -264,30 +264,36 @@ PROCESS_THREAD(node_process, ev, data)
   // register sockets
   while (-1 == tcp_socket_register(&socket_in, NULL, inputbuf, sizeof(inputbuf),NULL,0,data_callback,event_callback)){
         PRINTF("ERROR: Socket registration 'IN' failed... \n");
+        PROCESS_PAUSE();
   }
   while (-1 == tcp_socket_register(&socket_in, NULL, NULL,0, outputbuf, sizeof(outputbuf),data_callback,event_callback)){
         PRINTF("ERROR: Socket registration 'OUT' failed... \n");
+        PROCESS_PAUSE();
   }
   PRINTF("Sockets registered successfully!");
   uip_ipaddr_t dest_ipaddr;
   while(!NETSTACK_ROUTING.node_has_joined || !NETSTACK_ROUTING.get_root_ipaddr(&dest_ipaddr)){
         PRINTF("ERROR: Node could not recieve 'root' IP... \n");
+        PROCESS_PAUSE();
   }
   while (-1 ==tcp_socket_listen(&socket_in, TCP_PORT_IN)){
         PRINTF("ERROR: In socket failed to listen \n");
+        PROCESS_PAUSE();
   }
   PRINTF("Node sending join message... \n");
   
   while(tcp_socket_connect(&socket_out, &dest_ipaddr, TCP_PORT_ROOT) == -1){
       PRINTF("ERROR: failed to connect to root... \n");
+      PROCESS_PAUSE();
   }
-  PRINTF("Nod connected to root!");
+  PRINTF("Node connected to root!");
 
   /* Create request message */
   Header msg;
   msg.msg_type = REQUEST;
   while(tcp_socket_send(&socket_out, (uint8_t*)&msg, sizeof(Header)) == -1){
       PRINTF("ERROR: failed to send REQUEST message \n");
+      PROCESS_PAUSE();
   }
   PRINTF("Node sending join message succesfully! \n");
 
@@ -323,20 +329,25 @@ PROCESS_THREAD(root_process, env, data){
   // register sockets
   while (-1 == tcp_socket_register(&socket_in, NULL, inputbuf, sizeof(inputbuf),NULL, 0,data_callback,event_callback)){
         PRINTF("ERROR: Socket registration 'IN' failed... \n");
+        PROCESS_PAUSE();
   }
   while (-1 == tcp_socket_register(&socket_in, NULL, NULL, 0, outputbuf, sizeof(outputbuf),data_callback,event_callback)){
         PRINTF("ERROR: Socket registration 'OUT' failed... \n");
+        PROCESS_PAUSE();
   }
   while (-1 == tcp_socket_register(&root_socket,NULL, inputbuf,sizeof(inputbuf), NULL, 0,data_callback, event_callback)){
         PRINTF("ERROR: Socket registration 'ROOT' failed... \n");
+        PROCESS_PAUSE();
   }
   PRINTF("Sockets registered successfully! \n");
 
   while (-1 ==tcp_socket_listen(&root_socket, TCP_PORT_ROOT)){
         PRINTF("ERROR: Root socket failed to listen \n");
+        PROCESS_PAUSE();
   }
   while (-1 ==tcp_socket_listen(&socket_in, TCP_PORT_IN)){
         PRINTF("ERROR: In socket failed to listen \n");
+        PROCESS_PAUSE();
   }
   PRINTF("Root now listening for new nodes.. \n");
 
