@@ -137,7 +137,9 @@ void event_callback(struct tcp_socket *s, void *ptr, tcp_socket_event_t event){
 
 int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr, int input_data_len){
     // Think it should just consume data directly?
+    
     Ring_msg* msg = (Ring_msg*)input_data_ptr;
+    PRINTF("DATA CALLBACK: %d", msg->hdr.msg_type);
     switch (msg->hdr.msg_type)
         {
         case PASS_IP: ;
