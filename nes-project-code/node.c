@@ -268,7 +268,7 @@ PROCESS_THREAD(node_process, ev, data)
         PRINTF("ERROR: Socket registration 'IN' failed... \n");
         PROCESS_PAUSE();
   }
-  while (-1 == tcp_socket_register(&socket_in, NULL, NULL,0, outputbuf, sizeof(outputbuf),data_callback,event_callback)){
+  while (-1 == tcp_socket_register(&socket_out, NULL, NULL,0, outputbuf, sizeof(outputbuf),data_callback,event_callback)){
         PRINTF("ERROR: Socket registration 'OUT' failed... \n");
         PROCESS_PAUSE();
   }
@@ -333,7 +333,7 @@ PROCESS_THREAD(root_process, ev, data){
         PRINTF("ERROR: Socket registration 'IN' failed... \n");
         PROCESS_PAUSE();
   }
-  while (-1 == tcp_socket_register(&socket_in, NULL, NULL, 0, outputbuf, sizeof(outputbuf),data_callback,event_callback)){
+  while (-1 == tcp_socket_register(&socket_out, NULL, NULL, 0, outputbuf, sizeof(outputbuf),data_callback,event_callback)){
         PRINTF("ERROR: Socket registration 'OUT' failed... \n");
         PROCESS_PAUSE();
   }
