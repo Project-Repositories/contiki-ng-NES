@@ -63,9 +63,13 @@ static uint8_t inputbuf[BUFSIZE];
 static uint8_t outputbuf[BUFSIZE];
 // sockets
 static struct tcp_socket socket_in;
+char socket_in_name[] = "socket_in";
 static struct tcp_socket socket_out;
+char socket_out_name[] = "socket_out";
 #if IS_ROOT
-  static struct tcp_socket root_socket;
+  static uint8_t rootbuf[BUFSIZE];
+  static struct tcp_socket socket_root;
+  char socket_root_name[] = "socket_root";
   #define VALID_RING() (socket_out.c != NULL)
 #endif
 
@@ -74,7 +78,6 @@ static struct tcp_socket socket_out;
 
 /*---------------------------------------------------------------------------*/
 
-PROCESS(msg_sender, "MSG sender");
 
 #if IS_ROOT
   PROCESS(root_process, "RPL Root");
@@ -106,7 +109,7 @@ int gen_id(){
 /*    callback functions    */
 
 void event_callback(struct tcp_socket *s, void *ptr, tcp_socket_event_t event){
-
+    PRINTF("SOCKET: %s | ", (char*)s->ptr);
     switch (event)
     {
     case TCP_SOCKET_CONNECTED:
@@ -200,6 +203,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
               memcpy(&new_msg->ipaddr, &msg->Ip_msg.ipaddr, sizeof(uip_ipaddr_t));
               
               /* send message on outcomming socket */
+              PRINTF("SENDING MESSAGE HDR: %d", new_msg->hdr.msg_type);
               while(tcp_socket_send(&socket_out, (uint8_t*)new_msg, sizeof(Ip_msg))==-1){
                 PRINTF("ERROR: sending message to first node failed... \n");
               }
@@ -221,15 +225,17 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
 
             //store id for next node
             id_next = new_msg->Id1;
-            memcpy(&new_msg->ipaddr, &root_socket.c->ripaddr, sizeof(uip_ipaddr_t));
-            while(tcp_socket_send(&socket_out, (uint8_t*)&new_msg, sizeof(Ip_msg))==-1){
+            memcpy(&new_msg->ipaddr, &socket_root.c->ripaddr, sizeof(uip_ipaddr_t));
+
+            PRINTF("SENDING MESSAGE HDR: %d", new_msg->hdr.msg_type);
+            while(tcp_socket_send(&socket_out, (uint8_t*) new_msg, sizeof(Ip_msg))==-1){
                 PRINTF("ERROR: sending message to first node failed... \n");
             }
             PRINTF("Succesfully send join message to first node! \n");
             free(new_msg);
 
             // Close root socket, to allow other nodes to join
-            while(tcp_socket_close(&root_socket) == -1){
+            while(tcp_socket_close(&socket_root) == -1){
               PRINTF("ERROR: failed to close 'root' socket \n");
             }
             PRINTF("Root socket connection closed... \n");
@@ -341,13 +347,13 @@ PROCESS_THREAD(root_process, ev, data){
         PRINTF("ERROR: Socket registration 'OUT' failed... \n");
         PROCESS_PAUSE();
   }
-  while (-1 == tcp_socket_register(&root_socket,NULL, inputbuf,sizeof(inputbuf), NULL, 0,data_callback, event_callback)){
+  while (-1 == tcp_socket_register(&socket_root,NULL, rootbuf,sizeof(rootbuf), NULL, 0,data_callback, event_callback)){
         PRINTF("ERROR: Socket registration 'ROOT' failed... \n");
         PROCESS_PAUSE();
   }
   PRINTF("Sockets registered successfully! \n");
 
-  while (-1 ==tcp_socket_listen(&root_socket, TCP_PORT_ROOT)){
+  while (-1 ==tcp_socket_listen(&socket_root, TCP_PORT_ROOT)){
         PRINTF("ERROR: Root socket failed to listen \n");
         PROCESS_PAUSE();
   }
@@ -379,23 +385,4 @@ PROCESS_THREAD(root_process, ev, data){
 /*---------------------------------------------------------------------------*/
 
 /* should send the messages from the inputbuffer*/
-PROCESS_THREAD(msg_sender, ev, data){
-
-  PROCESS_BEGIN();
-
-  while(1){
-    /* wait for something to handle in input buffer*/
-    PROCESS_YIELD_UNTIL(sem == 1);
-
-    /*
-      send a message forward in the ring
-    
-    */
-    sem = 0; // state that it is finished sending a message
-  }
-
-
-
-  PROCESS_END();
-}
 /*-------------------------------------------------------------------------*/
