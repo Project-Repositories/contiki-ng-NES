@@ -35,6 +35,7 @@
 #ifndef PROJECT_CONF_H_
 #define PROJECT_CONF_H_
 
+#define UIP_CONNS 10
 
 #define UIP_CONF_TCP 1
 

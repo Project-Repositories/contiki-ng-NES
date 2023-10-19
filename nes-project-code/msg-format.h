@@ -23,8 +23,8 @@
 /* hdr id for join request messages - ONLY FOR ROOT */
 #define REQUEST 7
 
-/* hdr id for Empty message */
-#define EMPTY 8
+/* hdr id for Ring message */
+#define RING 8
 
 
 typedef struct{
