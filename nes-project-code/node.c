@@ -58,10 +58,7 @@
 #define TCP_PORT_IN 8091
 
 //DEFINE NODE
-<<<<<<< HEAD
-=======
 #define N_NODES 5
->>>>>>> f2e5c7e34f4bc95d5af99ef8b4b6733938d17d19
 #define IS_ROOT false
 // buffers
 #define BUFSIZE sizeof(Ring_msg)
