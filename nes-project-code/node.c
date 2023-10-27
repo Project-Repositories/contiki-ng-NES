@@ -50,12 +50,12 @@
 #include <stdlib.h>
 #define DEBUG DEBUG_PRINT
 #include "net/ipv6/uip-debug.h"
-
 #include "tcp-socket.h"
 
 
 #define TCP_PORT_ROOT 8080
 #define TCP_PORT_IN 8091
+
 
 //DEFINE NODE
 #define N_NODES 5
@@ -79,7 +79,6 @@ char socket_out_name[] = "socket_out";
 static uip_ipaddr_t self_ip; // ip of the node
 
 
-
 // TCP socket Documentation
 
 /*---------------------------------------------------------------------------*/
@@ -98,14 +97,15 @@ PROCESS(status_process, "Sender");
 // or maybe develop a new custom shell command 
 // shell_command_set_register(custom_shell_command_set);
 
-// if node is root make gen
-static int id;
-static int id_next;
+// if node is root make gen -1 to say not set yet
+static int id = -1;
+static int id_next = -1;
 #if IS_ROOT
 static int IdArr[N_NODES];
 static int current_n_nodes = 0;
 
-bool intisinarray(int val, int* arr, size_t arr_len) {
+
+bool int_is_in_array(int val, int* arr, size_t arr_len) {
   for (size_t i = 0; i < arr_len; i++) {
     if (val == arr[i]) {
       return true;
@@ -117,16 +117,18 @@ bool intisinarray(int val, int* arr, size_t arr_len) {
 
 int gen_id(){
   //generates a random, new ID between 1 and 30
-  int id =(rand() % 30) +1;
-  while (intisinarray(id, IdArr, N_NODES)) {
-    id =(rand() % 30) +1;
-  }
+  do {
+   id =(rand() % 30) +1;
+  }while (intisinarray(id, IdArr, N_NODES));
   IdArr[current_n_nodes] = id;
   current_n_nodes++;
   return id;
 }
 #endif // IS_ROOT
-
+static struct etimer sleeptimer;
+void wait(int seconds){
+  etimer_set(&sleeptimer, CLOCK_SECOND*seconds);
+}
 
 
 
@@ -309,31 +311,39 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(node_process, ev, data)
 {
+  static struct etimer sleep_timer;
   PROCESS_BEGIN();
-
+  
   NETSTACK_MAC.on();
 
   // register sockets
   while (-1 == tcp_socket_register(&socket_in, &socket_in_name, inputbuf, sizeof(inputbuf),NULL,0,data_callback,event_callback)){
         PRINTF("ERROR: Socket registration 'IN' failed... \n");
-        PROCESS_PAUSE();
+        wait(1);
+        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
+
   }
   while (-1 == tcp_socket_register(&socket_out, &socket_out_name, NULL,0, outputbuf, sizeof(outputbuf),data_callback,event_callback)){
         PRINTF("ERROR: Socket registration 'OUT' failed... \n");
-        PROCESS_PAUSE();
+        wait(1);
+        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
   }
   while (-1 == tcp_socket_listen(&socket_in, TCP_PORT_IN) ){
         PRINTF("ERROR: In socket failed to listen \n");
-        PROCESS_PAUSE();
+        wait(1);
+        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
   }
 
 
   PRINTF("Sockets registered successfully!");
   uip_ipaddr_t dest_ipaddr;
-
+  
   while(!NETSTACK_ROUTING.node_is_reachable || !NETSTACK_ROUTING.get_root_ipaddr(&dest_ipaddr)){
         PRINTF("ERROR: Node could not recieve 'root' IP... \n");
-        PROCESS_PAUSE();
+        wait(1);
+        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
+        
+        
   }
   PRINTF("HOST THIS NODE: "); uiplib_ipaddr_print(&dest_ipaddr); PRINTF("\n");
     /* get ip addresss of itself*/
@@ -345,7 +355,8 @@ PROCESS_THREAD(node_process, ev, data)
   
   while(-1 == tcp_socket_connect(&socket_out, &dest_ipaddr, TCP_PORT_ROOT)){
       PRINTF("ERROR: failed to connect to root... \n");
-      PROCESS_PAUSE();
+      wait(1);
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
   }
   PRINTF("Node connected to root! \n");
   /* Create request message */
@@ -354,7 +365,8 @@ PROCESS_THREAD(node_process, ev, data)
   memcpy(&msg.ipaddr, &self_ip, sizeof(uip_ipaddr_t));
   while(-1 == tcp_socket_send(&socket_out, (uint8_t*)&msg, sizeof(Ip_msg))){
       PRINTF("ERROR: failed to send REQUEST message \n");
-      PROCESS_PAUSE();
+      wait(1);
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
   }
   PRINTF("Node sending join message succesfully! \n");
 
@@ -372,7 +384,7 @@ PROCESS_THREAD(node_process, ev, data)
 
 PROCESS_THREAD(root_process, ev, data){ 
   PROCESS_BEGIN();
-
+  static struct etimer sleep_timer;
 
   NETSTACK_ROUTING.root_start();
   NETSTACK_MAC.on();
@@ -385,25 +397,30 @@ PROCESS_THREAD(root_process, ev, data){
   // register sockets
   while (-1 == tcp_socket_register(&socket_in, &socket_in_name, inputbuf, sizeof(inputbuf),outputbuf, sizeof(outputbuf),data_callback,event_callback)){
         PRINTF("ERROR: Socket registration 'IN' failed... \n");
-        PROCESS_PAUSE();
+        wait(1);
+        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
   }
   while (-1 == tcp_socket_register(&socket_out, &socket_out_name, NULL, 0, outputbuf, sizeof(outputbuf),data_callback,event_callback)){
         PRINTF("ERROR: Socket registration 'OUT' failed... \n");
-        PROCESS_PAUSE();
+        wait(1);
+        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
   }
   while (-1 == tcp_socket_register(&socket_root,&socket_root_name, rootbuf,sizeof(rootbuf), NULL, 0,data_callback, event_callback)){
         PRINTF("ERROR: Socket registration 'ROOT' failed... \n");
-        PROCESS_PAUSE();
+        wait(1);
+        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
   }
   PRINTF("Sockets registered successfully! \n");
 
   while (-1 ==tcp_socket_listen(&socket_root, TCP_PORT_ROOT)){
         PRINTF("ERROR: Root socket failed to listen \n");
-        PROCESS_PAUSE();
+        wait(1);
+        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
   }
-  while (-1 ==tcp_socket_listen(&socket_in, TCP_PORT_IN)){
+  while (-1 == tcp_socket_listen(&socket_in, TCP_PORT_IN)){
         PRINTF("ERROR: In socket failed to listen \n");
-        PROCESS_PAUSE();
+        wait(1);
+        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
   }
   PRINTF("Root now listening for new nodes.. \n");
 
@@ -423,6 +440,9 @@ PROCESS_THREAD(status_process, ev, data){
     PROCESS_BEGIN();
     etimer_set(&timer, CLOCK_SECOND*10);
     while(1){
+      if(id == -1 && id_next == -1){
+        PRINTF("RUNNING STATUS... \n SELF ID: NOT SET BY ROOT \n NEXT ID: NOT SET BY ROOT \n ");
+      }
       PRINTF("RUNNING STATUS... \n SELF ID: %d \n NEXT ID: %d \n ", id, id_next);
       #if IS_ROOT
         PRINTF("RING STATUS: %d\n", VALID_RING());
