@@ -57,7 +57,7 @@
 #define TCP_PORT_IN 8091
 //DEFINE NODE
 #define N_NODES 5
-#define IS_ROOT true
+#define IS_ROOT false
 // buffers
 #define BUFSIZE sizeof(Ring_msg)
 static uint8_t inputbuf[BUFSIZE];
@@ -232,15 +232,15 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
             while(-1 == tcp_socket_send(&socket_out, (uint8_t*) msg, sizeof(Header))){
               PRINTF("ERROR: couldnt send 'RING' message... \n");
             }
-            PRINTF("Passed 'RING' message!");
+            PRINTF("Passed 'RING' message! \n");
 
           #endif // not IS_ROOT
           break;
         case PASS_IP: ;
           /* code */
-          
-          uint8_t Id1 = msg->Ip_msg.Id1;
+          int Id1 = msg->Ip_msg.Id1;
           // pass message
+          PRINTF("PASS_IP, with ID: %d \n", Id1);
           if (Id1 > id_next){
             while(-1 == tcp_socket_send(&socket_out, (uint8_t* )msg, sizeof(Ip_msg))) {
               PRINTF("ERROR: Couldn't pass IP_msg forward... \n");
@@ -310,9 +310,9 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
               /* If the new node should be inserted somewhere after roots successor*/
               if (new_node_id > id_next){
                 // Construct pass_ip message
-                Ip_msg* new_msg = gen_Ip_msg(PASS_IP, gen_id(), -1, &msg->Ip_msg.ipaddr);
+                Ip_msg* new_msg = gen_Ip_msg(PASS_IP, new_node_id, -1, &msg->Ip_msg.ipaddr);
                 
-                PRINTF("SENDING PASS_IP MESSAGE, HDR: %d \n", new_msg->hdr.msg_type);
+                PRINTF("SENDING PASS_IP MESSAGE, ID %d \n", new_node_id);
                 while(-1 == tcp_socket_send(&socket_out, (uint8_t*) &new_msg, sizeof(Ip_msg))){
                   PRINTF("ERROR: sending message to first node failed... \n");
                 }
@@ -329,7 +329,6 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
                   //store id for next node
                   id_next = new_node_id;
                   PRINTF("FAILSAFE: "); uiplib_ipaddr_print(&socket_out.c->ripaddr); PRINTF("\n");
-
                   while(-1 == tcp_socket_connect(&socket_out, &msg->Ip_msg.ipaddr,TCP_PORT_IN) ){
                         PRINTF("TCP socket connection failed... \n");
                       }
@@ -411,7 +410,7 @@ PROCESS_THREAD(node_process, ev, data)
   }
 
 
-  PRINTF("Sockets registered successfully!");
+  PRINTF("Sockets registered successfully! \n");
   uip_ipaddr_t dest_ipaddr;
   
   while(!NETSTACK_ROUTING.node_is_reachable || !NETSTACK_ROUTING.get_root_ipaddr(&dest_ipaddr)){
@@ -446,13 +445,13 @@ PROCESS_THREAD(node_process, ev, data)
        break;
     }
     else if (ev == NODE_TO_ROOT_FAILED_EVENT){
-      PRINTF("Node failed to connect to root, will try again...");
+      PRINTF("Node failed to connect to root, will try again... \n");
     }
     else{
-      PRINTF("Undefined event... something went wrong?");
+      PRINTF("Undefined event... something went wrong? \n");
     }
   }
-  PRINTF("Node has connected to root successfully!");
+  PRINTF("Node has connected to root successfully! \n");
 
 
   /* Create request message */
@@ -545,11 +544,11 @@ PROCESS_THREAD(status_process, ev, data){
 
         /* Spawn ring messages*/
         if (socket_out.c != NULL){
-          PRINTF("Sending ring message...");
+          PRINTF("Sending ring message... \n");
           Header msg;
           msg.msg_type = RING;
           while(-1 == tcp_socket_send(&socket_out, (uint8_t*) &msg, sizeof(Header))){
-            PRINTF("ERROR: Couldnt spawn ring message from root...");
+            PRINTF("ERROR: Couldnt spawn ring message from root... \n");
           }
         }
 
