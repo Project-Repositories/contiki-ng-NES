@@ -52,14 +52,12 @@
 #include "net/ipv6/uip-debug.h"
 #include "tcp-socket.h"
 
-
+//Ports
 #define TCP_PORT_ROOT 8080
 #define TCP_PORT_IN 8091
-
-
 //DEFINE NODE
 #define N_NODES 5
-#define IS_ROOT false
+#define IS_ROOT true
 // buffers
 #define BUFSIZE sizeof(Ring_msg)
 static uint8_t inputbuf[BUFSIZE];
@@ -78,6 +76,11 @@ char socket_out_name[] = "socket_out";
 
 static uip_ipaddr_t self_ip; // ip of the node
 
+//Events
+#if !IS_ROOT
+static process_event_t NODE_TO_ROOT_SUCCESS_EVENT; // Custom event for when node has connected to root
+static process_event_t NODE_TO_ROOT_FAILED_EVENT; // Custom event for when node has failed to connect to root
+#endif
 
 // TCP socket Documentation
 
@@ -114,15 +117,15 @@ bool int_is_in_array(int val, int* arr, size_t arr_len) {
   return false;
 }
 
-
 int gen_id(){
   //generates a random, new ID between 1 and 30
+  int new_id;
   do {
-   id =(rand() % 30) +1;
-  }while (intisinarray(id, IdArr, N_NODES));
-  IdArr[current_n_nodes] = id;
+   new_id =(rand() % 30) +1;
+  }while (int_is_in_array(new_id, IdArr, N_NODES));
+  IdArr[current_n_nodes] = new_id;
   current_n_nodes++;
-  return id;
+  return new_id;
 }
 #endif // IS_ROOT
 static struct etimer sleeptimer;
@@ -130,31 +133,78 @@ void wait(int seconds){
   etimer_set(&sleeptimer, CLOCK_SECOND*seconds);
 }
 
+/* Allocates and generates an Ip_msg and return a pointer to it.
+   FREE msg after use!
+*/
+Ip_msg* gen_Ip_msg(uint8_t msgType, uint8_t Id1, uint8_t Id2,uip_ipaddr_t* ipaddr ){
+    Ip_msg* new_msg = malloc(sizeof(Ip_msg));
+    new_msg->hdr.msg_type = msgType;
+    new_msg->Id1 = Id1;
+    new_msg->Id2 = Id2;
+    memcpy(&new_msg->ipaddr, ipaddr, sizeof(uip_ipaddr_t));
+    
+    return new_msg;
+}
 
 
 /*    callback functions    */
-static bool DISCONNECT_FLAG = false;
 void event_callback(struct tcp_socket *s, void *ptr, tcp_socket_event_t event){
     PRINTF("SOCKET: %s | ", (char *)s->ptr);
     switch (event)
     {
     case TCP_SOCKET_CONNECTED:
       PRINTF("EVENT: TCP_SOCKET_CONNECTED \n");
+
+      /* If the callback comes from socket out
+         Then we post an event to the process
+      */
+      #if !IS_ROOT
+        if (strcmp((char*) s->ptr,"socket_out") == 0){
+          int status = process_post(&node_process, NODE_TO_ROOT_SUCCESS_EVENT, NULL);
+          if (status == PROCESS_ERR_OK){
+            PRINTF("PROCESS_ERR_OK");
+          }
+          else{
+            PRINTF("PROCESS_ERR_FULL");
+          }
+        }
+      #endif
       break;
     case TCP_SOCKET_CLOSED:
       PRINTF("EVENT: TCP_SOCKET_CLOSED \n");
-      if (strcmp(s->ptr, socket_out_name)){
-          DISCONNECT_FLAG = 1;
-      }
       /* code */
       break;
     case TCP_SOCKET_TIMEDOUT:
       PRINTF("EVENT: TCP_SOCKET_TIMEDOUT \n");
       /* code */
+
+      #if !IS_ROOT
+      if (strcmp((char*) s->ptr,"socket_out") == 0){
+        int status = process_post(&node_process, NODE_TO_ROOT_FAILED_EVENT, NULL);
+        if (status == PROCESS_ERR_OK){
+          PRINTF("PROCESS_ERR_OK");
+        }
+        else{
+          PRINTF("PROCESS_ERR_FULL");
+        }
+      }
+      #endif
       break;
     case TCP_SOCKET_ABORTED:
       PRINTF("EVENT: TCP_SOCKET_ABORTED \n");
       /* code */
+      #if !IS_ROOT
+      if (strcmp((char*) s->ptr, "socket_out")==0){
+        int status = process_post(&node_process, NODE_TO_ROOT_FAILED_EVENT, NULL);
+        if (status == PROCESS_ERR_OK){
+          PRINTF("PROCESS_ERR_OK");
+        }
+        else{
+          PRINTF("PROCESS_ERR_FULL");
+        }
+      }
+      #endif
+
       break;
     case TCP_SOCKET_DATA_SENT:
       PRINTF("EVENT: TCP_SOCKET_DATA_SENT \n");
@@ -198,20 +248,24 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
             break;
           }
           else {
-            // else: insert node
+            /*
+              Insert a new node, the new node needs the ip of whoever this node is currently connected to.
+              Therefore it needs to construct a new ip_msg with that ip.
+            */
+
+
+
+            /* Construct join_succ message to new node*/
+            Ip_msg* new_msg = gen_Ip_msg(JOIN_SUCC,Id1,id_next, &socket_out.c->ripaddr);
+
             while(-1 == tcp_socket_connect(&socket_out, &msg->Ip_msg.ipaddr, TCP_PORT_IN)){
               PRINTF("ERROR: couldnt connect to new node... \n");
             }
-            /* Construct join_succ message to new node*/
-            Ip_msg new_msg;
-            new_msg.hdr.msg_type = JOIN_SUCC;
-            new_msg.Id1 = Id1;
-            new_msg.Id2 = id_next;
             id_next = Id1; // update id
-            memcpy(&new_msg.ipaddr, &msg->Ip_msg, sizeof(uip_ipaddr_t));
-            while(-1 == tcp_socket_send(&socket_out, (uint8_t*) &new_msg, sizeof(Ip_msg))){
+            while(-1 == tcp_socket_send(&socket_out, (uint8_t*) new_msg, sizeof(Ip_msg))){
                 PRINTF("ERROR: Couldnt send 'JOIN_SUCC' to new node");
             }
+            free(new_msg);
             break;
           }
         case DROP:
@@ -225,13 +279,14 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
           
           PRINTF("Switching socket connection... \n"); 
           Ip_msg* ipMsg = (Ip_msg*) input_data_ptr;
+          id = ipMsg->Id1;
+          id_next = ipMsg->Id2;
           // connect to next node
           while(-1 == tcp_socket_connect(&socket_out, &ipMsg->ipaddr, TCP_PORT_IN)){
               PRINTF("TCP socket OUT connection failed... \n");
           }
           PRINTF("TCP socket connection succeeded! \n");
-          id = ipMsg->Id1;
-          id_next = ipMsg->Id2;
+          
 
 
 
@@ -250,21 +305,45 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
           // must be root
           PRINTF("Recieved 'REQUEST' message... \n");
           if (VALID_RING()){
-              
-              // Construct pass_ip message
-              Ip_msg new_msg;
-              new_msg.hdr.msg_type = PASS_IP;
-              new_msg.Id1 = gen_id(); // random id
-              memcpy(&new_msg.ipaddr,  &(msg->Ip_msg.ipaddr), sizeof(uip_ipaddr_t));
-              
-              PRINTF("SENDING PASS_IP MESSAGE, HDR: %d \n", new_msg.hdr.msg_type);
-              while(-1 == tcp_socket_send(&socket_out, (uint8_t*) &new_msg, sizeof(Ip_msg))){
-                PRINTF("ERROR: sending message to first node failed... \n");
+              int new_node_id = gen_id();
+
+              /* If the new node should be inserted somewhere after roots successor*/
+              if (new_node_id > id_next){
+                // Construct pass_ip message
+                Ip_msg* new_msg = gen_Ip_msg(PASS_IP, gen_id(), -1, &msg->Ip_msg.ipaddr);
+                
+                PRINTF("SENDING PASS_IP MESSAGE, HDR: %d \n", new_msg->hdr.msg_type);
+                while(-1 == tcp_socket_send(&socket_out, (uint8_t*) &new_msg, sizeof(Ip_msg))){
+                  PRINTF("ERROR: sending message to first node failed... \n");
+                }
+                PRINTF("Succesfully send PASS_IP message to first node! \n");
               }
-              PRINTF("Succesfully send PASS_IP message to first node! \n");
+              else{ 
+                  /*
+                   Insert a new node, the new node needs the ip of whoever this node is currently connected to.
+                   Therefore it needs to construct a new ip_msg with that ip.
+                   */
+
+                  // Generate new msg, the ip should be however the root is current talking to on socket out
+                  Ip_msg* new_msg = gen_Ip_msg(JOIN_SUCC,new_node_id,id_next, &socket_out.c->ripaddr);
+                  //store id for next node
+                  id_next = new_node_id;
+                  PRINTF("FAILSAFE: "); uiplib_ipaddr_print(&socket_out.c->ripaddr); PRINTF("\n");
+
+                  while(-1 == tcp_socket_connect(&socket_out, &msg->Ip_msg.ipaddr,TCP_PORT_IN) ){
+                        PRINTF("TCP socket connection failed... \n");
+                      }
+
+                  while(-1 == tcp_socket_send(&socket_out, (uint8_t*) new_msg, sizeof(Ip_msg))){
+                    PRINTF("ERROR: sending message to first node failed... \n");
+                  }
+                  PRINTF("Succesfully send join message to first node! \n");
+                  free(new_msg);
+              }
+
 
           }
-          else{
+          else{ // EDGE CASE - FIRST NODE JOINING RING
             PRINTF("FIRST NODE JOINING! \n");
             // Close root socket, to allow other nodes to join
             // try and connect to first node
@@ -275,22 +354,16 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
             //process_post(&root_process, PROCESS_EVENT_CONNECT, &msg->Ip_msg.ipaddr);
             PRINTF("TCP socket connection succeeded! \n");
 
-            uip_ipaddr_t* ipaddrs =(uip_ipaddr_t*) malloc(sizeof(uip_ipaddr_t));
-            memcpy(ipaddrs, &msg->Ip_msg.ipaddr, sizeof(uip_ipaddr_t));
-
-            //put new message into input buffer
-            Ip_msg new_msg;
-            new_msg.hdr.msg_type = JOIN_SUCC;
-            new_msg.Id1 = gen_id(); // random id
-            new_msg.Id2 = id; // self id
 
             //store id for next node
-            id_next = new_msg.Id1;
-            memcpy(&new_msg.ipaddr, &self_ip, sizeof(uip_ipaddr_t));
-            while(-1 == tcp_socket_send(&socket_out, (uint8_t*) &new_msg, sizeof(Ip_msg))){
+            id_next = gen_id();
+            //Generate new message
+            Ip_msg* new_msg = gen_Ip_msg(JOIN_SUCC,id_next,id, &self_ip);
+            while(-1 == tcp_socket_send(&socket_out, (uint8_t*) new_msg, sizeof(Ip_msg))){
               PRINTF("ERROR: sending message to first node failed... \n");
             }
             PRINTF("Succesfully send join message to first node! \n");
+            free(new_msg);
           }
 
 
@@ -308,14 +381,17 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
 
 #if !IS_ROOT
 
-/*---------------------------------------------------------------------------*/
+/*--------------------------------NODE-------------------------------------*/
+
 PROCESS_THREAD(node_process, ev, data)
 {
   static struct etimer sleep_timer;
   PROCESS_BEGIN();
-  
-  NETSTACK_MAC.on();
+  NODE_TO_ROOT_FAILED_EVENT = process_alloc_event(); // allocate event number
+  NODE_TO_ROOT_SUCCESS_EVENT = process_alloc_event(); // allocate event number
 
+  NETSTACK_MAC.on();
+  
   // register sockets
   while (-1 == tcp_socket_register(&socket_in, &socket_in_name, inputbuf, sizeof(inputbuf),NULL,0,data_callback,event_callback)){
         PRINTF("ERROR: Socket registration 'IN' failed... \n");
@@ -353,12 +429,32 @@ PROCESS_THREAD(node_process, ev, data)
 
   PRINTF("Node sending join message... \n");
   
-  while(-1 == tcp_socket_connect(&socket_out, &dest_ipaddr, TCP_PORT_ROOT)){
-      PRINTF("ERROR: failed to connect to root... \n");
-      wait(1);
-      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
+
+  /* Need to wait for the callback of tcp_socket_connect to see its connect to root, as the socket cuould be taken.
+    Here we use a custom process event to signal from the event callback.
+  */
+  while (true){
+    while(-1 == tcp_socket_connect(&socket_out, &dest_ipaddr, TCP_PORT_ROOT)){
+        PRINTF("ERROR: failed to send connection request to root... \n");
+        wait(1);
+        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
+    }
+    PRINTF("Node send connection request to root! \n");
+    PROCESS_WAIT_EVENT_UNTIL(ev == NODE_TO_ROOT_FAILED_EVENT || ev == NODE_TO_ROOT_SUCCESS_EVENT);
+    if (ev == NODE_TO_ROOT_SUCCESS_EVENT ){
+       //dont try and reconnect - hop out of while loop
+       break;
+    }
+    else if (ev == NODE_TO_ROOT_FAILED_EVENT){
+      PRINTF("Node failed to connect to root, will try again...");
+    }
+    else{
+      PRINTF("Undefined event... something went wrong?");
+    }
   }
-  PRINTF("Node connected to root! \n");
+  PRINTF("Node has connected to root successfully!");
+
+
   /* Create request message */
   Ip_msg msg;
   msg.hdr.msg_type = REQUEST;
@@ -377,11 +473,10 @@ PROCESS_THREAD(node_process, ev, data)
     PROCESS_END();
   }
 
-/*---------------------------------------------------------------------------*/
 #endif //!IS_ROOT
 
 #if IS_ROOT
-
+/*--------------------------------ROOT-----------------------------------*/
 PROCESS_THREAD(root_process, ev, data){ 
   PROCESS_BEGIN();
   static struct etimer sleep_timer;
