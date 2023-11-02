@@ -118,12 +118,19 @@ bool int_is_in_array(int val, int* arr, size_t arr_len) {
 }
 
 int gen_id(){
+  int[] id_list = {3,6,2,8,4};
+  int new_id;
+  
   //generates a random, new ID between 1 and 30
+  /*
   int new_id;
   do {
    new_id =(rand() % 30) +1;
   }while (int_is_in_array(new_id, IdArr, N_NODES));
   IdArr[current_n_nodes] = new_id;
+  */
+
+  new_id = id_list[current_n_nodes];
   current_n_nodes++;
   return new_id;
 }
