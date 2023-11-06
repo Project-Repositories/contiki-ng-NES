@@ -76,11 +76,16 @@ char socket_out_name[] = "socket_out";
 
 static uip_ipaddr_t self_ip; // ip of the node
 
-//Events
+// Events
 #if !IS_ROOT
 static process_event_t NODE_TO_ROOT_SUCCESS_EVENT; // Custom event for when node has connected to root
 static process_event_t NODE_TO_ROOT_FAILED_EVENT; // Custom event for when node has failed to connect to root
 #endif
+
+// Election
+static bool is_participating = false;
+static uint8_t elected = -1; // -1 = not defined
+
 
 // TCP socket Documentation
 
@@ -118,7 +123,7 @@ bool int_is_in_array(int val, int* arr, size_t arr_len) {
 }
 
 int gen_id(){
-  int[] id_list = {3,6,2,8,4};
+  int id_list[] = {3,6,2,8,4};
   int new_id;
   
   //generates a random, new ID between 1 and 30
@@ -131,6 +136,7 @@ int gen_id(){
   */
 
   new_id = id_list[current_n_nodes];
+  IdArr[current_n_nodes] = new_id;
   current_n_nodes++;
   return new_id;
 }
@@ -141,7 +147,7 @@ void wait(int seconds){
 }
 
 /* Allocates and generates an Ip_msg and return a pointer to it.
-   FREE msg after use!
+   Remember to FREE msg after use!
 */
 Ip_msg* gen_Ip_msg(uint8_t msgType, uint8_t Id1, uint8_t Id2,uip_ipaddr_t* ipaddr ){
     Ip_msg* new_msg = malloc(sizeof(Ip_msg));
@@ -151,6 +157,16 @@ Ip_msg* gen_Ip_msg(uint8_t msgType, uint8_t Id1, uint8_t Id2,uip_ipaddr_t* ipadd
     memcpy(&new_msg->ipaddr, ipaddr, sizeof(uip_ipaddr_t));
     
     return new_msg;
+}
+
+/* Allocates and generates an Election_msg and return a pointer to it.
+   Remember to FREE msg after use!
+*/
+Election_msg* gen_Election_msg(uint8_t msgType, uint8_t Id) {
+  Election_msg* new_msg = malloc(sizeof(Election_msg));
+  new_msg->hdr.msg_type = msgType;
+  new_msg->Id = Id;
+  return new_msg;
 }
 
 
@@ -301,11 +317,66 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
         case JOIN_PRE:
           /* code */
           break;
-        case ELECTION:
-          /* code */
+        case ELECTION: ;
+          Election_msg* election_msg = (Election_msg*) input_data_ptr;
+          uint8_t elect_msg_id = election_msg->Id;
+          PRINTF("ELECTION MSG RECEIVED WITH ID: %d \n", elect_msg_id);
+
+          if (elect_msg_id > id) {
+            // forward to neighbor, mark itself as participant
+            PRINTF("ELECTION: forwarding id... \n");
+            Election_msg* msg = gen_Election_msg(ELECTION, elect_msg_id);
+            while(-1 == tcp_socket_send(&socket_out, (uint8_t*) msg, sizeof(Election_msg))) {
+              PRINTF("ERROR: Couldnt send election message from node... \n");
+            }
+            free(msg);
+            is_participating = true;
+          }
+          else if ((elect_msg_id < id) && !is_participating) {
+            // substitutes its own identifier in the message;
+            // it forwards the message to its neighbour;
+            // it marks itself as a participant 
+            PRINTF("ELECTION: substituting id... \n");
+            Election_msg* msg = gen_Election_msg(ELECTION, id);
+            while(-1 == tcp_socket_send(&socket_out, (uint8_t*) msg, sizeof(Election_msg))) { 
+              PRINTF("ERROR: Couldnt send election message from node... \n");
+            }
+            free(msg);
+            is_participating = true;
+          }
+          else if ((elect_msg_id < id) && is_participating)
+          {
+              // discards the message (i.e., it does not forward the message) -> do nothing
+              PRINTF("ELECTION: discarding msg... \n");
+          }
+          else { 
+            // the received identifier is that of the receiver itself
+            // -> this process’s identifier must be the greatest: coordinator
+            // mark as non-participant
+            // send elected msg
+            PRINTF("ELECTION: chosen as coordinator... \n");
+            PRINTF("received id: %d, own id: %d \n",elect_msg_id, id); // Has to be equal
+            is_participating = false;
+            Election_msg* msg = gen_Election_msg(ELECTED, id);
+            while(-1 == tcp_socket_send(&socket_out, (uint8_t*) msg, sizeof(Election_msg))) { 
+              PRINTF("ERROR: Couldnt send election message from node... \n");
+            }
+            free(msg);
+          }
           break;
-        case ELECTED:
-          /* code */
+        case ELECTED: ;
+          Election_msg* elected_msg = (Election_msg*) input_data_ptr;
+
+          is_participating = false;
+          elected = elected_msg->Id;
+          PRINTF("ELECTED: Winner is %d \n",elected);
+          if (elected != id) {
+            Election_msg* msg = gen_Election_msg(ELECTED, elected);
+            while(-1 == tcp_socket_send(&socket_out, (uint8_t*) msg, sizeof(Election_msg))) { 
+              PRINTF("ERROR: Couldnt send election message from node... \n");
+            }
+            free(msg);
+          }
           break;
       #if IS_ROOT
         case REQUEST:
@@ -376,7 +447,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
           break;
       #endif
         default:
-          PRINTF("UNDEFINED MESSAG HDR: %d \n", msg->hdr.msg_type);
+          PRINTF("UNDEFINED MESSAGE HDR: %d \n", msg->hdr.msg_type);
           break;
         }
 
@@ -489,7 +560,7 @@ PROCESS_THREAD(root_process, ev, data){
 
   NETSTACK_ROUTING.root_start();
   NETSTACK_MAC.on();
-  id = 0; // root id
+  id = 100; // root id
 
   memcpy(&self_ip, &uip_ds6_get_global(ADDR_PREFERRED)->ipaddr, sizeof(uip_ipaddr_t));
   PRINTF("IP THIS NODE: "); uiplib_ipaddr_print(&self_ip); PRINTF("\n");
@@ -540,11 +611,18 @@ PROCESS_THREAD(status_process, ev, data){
     static struct etimer timer;
     PROCESS_BEGIN();
     etimer_set(&timer, CLOCK_SECOND*10);
+
+    #if !IS_ROOT
+      static struct etimer election_timer;
+      etimer_set(&election_timer, CLOCK_SECOND*20);
+    #endif // !IS_ROOT
+
     while(1){
       if(id == -1 && id_next == -1){
         PRINTF("RUNNING STATUS... \n SELF ID: NOT SET BY ROOT \n NEXT ID: NOT SET BY ROOT \n ");
       }
       PRINTF("RUNNING STATUS... \n SELF ID: %d \n NEXT ID: %d \n ", id, id_next);
+      PRINTF("participating in election? %d \n",is_participating);
       #if IS_ROOT
         PRINTF("RING STATUS: %d\n", VALID_RING());
         PRINTF("CURRENT NODS: %d\n", current_n_nodes);
@@ -559,7 +637,21 @@ PROCESS_THREAD(status_process, ev, data){
           }
         }
 
-      #endif // IS_ROOT
+      #elif !IS_ROOT
+      if ((-1 != id) && (-1 != id_next) && etimer_expired(&election_timer) && (!is_participating)) {
+        /* Start election message*/
+        if (socket_out.c != NULL) {
+          PRINTF("Sending first election message... \n");
+          Election_msg* msg = gen_Election_msg(ELECTION, id);
+          while(-1 == tcp_socket_send(&socket_out, (uint8_t*) msg, sizeof(Election_msg))) { 
+            PRINTF("ERROR: Couldnt send election message from node... \n");
+          }
+          free(msg);
+          is_participating = true;
+        }
+        etimer_reset(&election_timer);
+      }
+      #endif // !IS_ROOT
 
       PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
       etimer_reset(&timer);
@@ -567,9 +659,5 @@ PROCESS_THREAD(status_process, ev, data){
     }
 
     PROCESS_END();
-
 }
-
-
-
 /*-------------------------------------------------------------------------*/
