@@ -57,7 +57,7 @@
 #define TCP_PORT_IN 8091
 //DEFINE NODE
 #define N_NODES 5
-#define IS_ROOT false
+#define IS_ROOT true
 // buffers
 #define BUFSIZE sizeof(Ring_msg)
 static uint8_t inputbuf[BUFSIZE];
@@ -391,7 +391,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
                 Ip_msg* new_msg = gen_Ip_msg(PASS_IP, new_node_id, -1, &msg->Ip_msg.ipaddr);
                 
                 PRINTF("SENDING PASS_IP MESSAGE, ID %d \n", new_node_id);
-                while(-1 == tcp_socket_send(&socket_out, (uint8_t*) &new_msg, sizeof(Ip_msg))){
+                while(-1 == tcp_socket_send(&socket_out, (uint8_t*) new_msg, sizeof(Ip_msg))){
                   PRINTF("ERROR: sending message to first node failed... \n");
                 }
                 PRINTF("Succesfully send PASS_IP message to first node! \n");
