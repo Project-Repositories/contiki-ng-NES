@@ -51,6 +51,11 @@
 #define DEBUG DEBUG_PRINT
 #include "net/ipv6/uip-debug.h"
 #include "tcp-socket.h"
+#include "dev/leds.h"
+#include "platform/cc26x0-cc13x0/srf06/board-peripherals.h"
+
+
+
 
 //Ports
 #define TCP_PORT_ROOT 8080
@@ -332,6 +337,8 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
             }
             free(msg);
             is_participating = true;
+            leds_off(LEDS_GREEN);
+            leds_on(LEDS_RED);
           }
           else if ((elect_msg_id < id) && !is_participating) {
             // substitutes its own identifier in the message;
@@ -344,6 +351,8 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
             }
             free(msg);
             is_participating = true;
+            leds_off(LEDS_GREEN);
+            leds_on(LEDS_RED);
           }
           else if ((elect_msg_id < id) && is_participating)
           {
@@ -358,6 +367,8 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
             PRINTF("ELECTION: chosen as coordinator... \n");
             PRINTF("received id: %d, own id: %d \n",elect_msg_id, id); // Has to be equal
             is_participating = false;
+            leds_on(LEDS_GREEN);
+            leds_off(LEDS_RED);
             Election_msg* msg = gen_Election_msg(ELECTED, id);
             while(-1 == tcp_socket_send(&socket_out, (uint8_t*) msg, sizeof(Election_msg))) { 
               PRINTF("ERROR: Couldnt send election message from node... \n");
@@ -369,6 +380,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
           Election_msg* elected_msg = (Election_msg*) input_data_ptr;
 
           is_participating = false;
+          leds_off(LEDS_RED);
           elected = elected_msg->Id;
           PRINTF("ELECTED: Winner is %d \n",elected);
           if (elected != id) {
@@ -469,7 +481,11 @@ PROCESS_THREAD(node_process, ev, data)
   NODE_TO_ROOT_SUCCESS_EVENT = process_alloc_event(); // allocate event number
 
   NETSTACK_MAC.on();
-  
+
+  // Peripheral for 26XX
+  leds_off(LEDS_GREEN);
+  leds_off(LEDS_RED);
+
   // register sockets
   while (-1 == tcp_socket_register(&socket_in, &socket_in_name, inputbuf, sizeof(inputbuf),NULL,0,data_callback,event_callback)){
         PRINTF("ERROR: Socket registration 'IN' failed... \n");
@@ -649,6 +665,8 @@ PROCESS_THREAD(status_process, ev, data){
           }
           free(msg);
           is_participating = true;
+          leds_off(LEDS_GREEN);
+          leds_on(LEDS_RED);
         }
         etimer_reset(&election_timer);
       }
