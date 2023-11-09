@@ -51,9 +51,9 @@
 #define DEBUG DEBUG_PRINT
 #include "net/ipv6/uip-debug.h"
 #include "tcp-socket.h"
+
 #include "dev/leds.h"
 #include "platform/cc26x0-cc13x0/srf06/board-peripherals.h"
-
 
 
 
@@ -63,7 +63,7 @@
 //DEFINE NODE
 #define ROOT_ID 0
 #define N_NODES 5
-#define IS_ROOT false
+#define IS_ROOT true
 // buffers
 #define BUFSIZE sizeof(Ring_msg)
 static uint8_t inputbuf[BUFSIZE];
@@ -256,9 +256,11 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
         case RING: ;
           #if IS_ROOT
             PRINTF("SUCCESS! Ring message recieved! \n");
+            Timestamp_msg* timestampMsg = (Timestamp_msg*) input_data_ptr;
+            // current progress !!!
           #else // IS_ROOT
             /* pass message */          
-            while(-1 == tcp_socket_send(&socket_out, (uint8_t*) msg, sizeof(Header))){
+            while(-1 == tcp_socket_send(&socket_out, (uint8_t*) msg, sizeof(Timestamp_msg))){
               PRINTF("ERROR: couldnt send 'RING' message... \n");
             }
             PRINTF("Passed 'RING' message! \n");
@@ -475,12 +477,16 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
 
 PROCESS_THREAD(node_process, ev, data)
 {
+  long ticks = clock_time();
+  long timestamp = clock_seconds();
+  PRINTF("ticks | timestamp = %lu | %lu \n !!!",ticks,timestamp);
   static struct etimer sleep_timer;
   PROCESS_BEGIN();
   NODE_TO_ROOT_FAILED_EVENT = process_alloc_event(); // allocate event number
   NODE_TO_ROOT_SUCCESS_EVENT = process_alloc_event(); // allocate event number
 
   NETSTACK_MAC.on();
+
 
   // Peripheral for 26XX
   leds_off(LEDS_GREEN);
@@ -491,6 +497,9 @@ PROCESS_THREAD(node_process, ev, data)
         PRINTF("ERROR: Socket registration 'IN' failed... \n");
         wait(1);
         PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
+        ticks = clock_time();
+        timestamp = clock_seconds();
+        PRINTF("ticks | timestamp = %lu | %lu \n !!!",ticks,timestamp);
 
   }
   while (-1 == tcp_socket_register(&socket_out, &socket_out_name, NULL,0, outputbuf, sizeof(outputbuf),data_callback,event_callback)){
@@ -647,11 +656,13 @@ PROCESS_THREAD(status_process, ev, data){
         /* Spawn ring messages*/
         if (socket_out.c != NULL){
           PRINTF("Sending ring message... \n");
-          Header msg;
-          msg.msg_type = RING;
-          while(-1 == tcp_socket_send(&socket_out, (uint8_t*) &msg, sizeof(Header))){
+          Timestamp_msg* new_msg = malloc(sizeof(Timestamp_msg));
+          new_msg->hdr.msg_type = RING;
+          new_msg->ticks = clock_time();
+          while(-1 == tcp_socket_send(&socket_out, (uint8_t*) new_msg, sizeof(Timestamp_msg))){
             PRINTF("ERROR: Couldnt spawn ring message from root... \n");
           }
+          free(new_msg);
         }
 
       #elif !IS_ROOT

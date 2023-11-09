@@ -43,9 +43,15 @@ typedef struct{
     uint8_t Id;
 } Election_msg;
 
+typedef struct{
+    Header hdr;
+    unsigned long ticks;
+} Timestamp_msg;
+
 typedef union{
     Header hdr; // hdr
     Ip_msg Ip_msg; // ip msg
+    Timestamp_msg Timestamp_msg; // timestamp message
     Election_msg election_packet; // election msg
     uint8_t Byte[sizeof(Ip_msg)]; /* byte level access*/
 } Ring_msg;
