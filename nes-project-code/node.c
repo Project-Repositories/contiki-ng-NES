@@ -56,8 +56,9 @@
 #define TCP_PORT_ROOT 8080
 #define TCP_PORT_IN 8091
 //DEFINE NODE
+#define ROOT_ID 0
 #define N_NODES 5
-#define IS_ROOT true
+#define IS_ROOT false
 // buffers
 #define BUFSIZE sizeof(Ring_msg)
 static uint8_t inputbuf[BUFSIZE];
@@ -264,7 +265,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
           int Id1 = msg->Ip_msg.Id1;
           // pass message
           PRINTF("PASS_IP, with ID: %d \n", Id1);
-          if (Id1 > id_next){
+          if (Id1 > id_next && id_next != ROOT_ID) { // root edge case to avoid infinite message passing
             while(-1 == tcp_socket_send(&socket_out, (uint8_t* )msg, sizeof(Ip_msg))) {
               PRINTF("ERROR: Couldn't pass IP_msg forward... \n");
             }
@@ -560,7 +561,7 @@ PROCESS_THREAD(root_process, ev, data){
 
   NETSTACK_ROUTING.root_start();
   NETSTACK_MAC.on();
-  id = 100; // root id
+  id = ROOT_ID; // root id
 
   memcpy(&self_ip, &uip_ds6_get_global(ADDR_PREFERRED)->ipaddr, sizeof(uip_ipaddr_t));
   PRINTF("IP THIS NODE: "); uiplib_ipaddr_print(&self_ip); PRINTF("\n");
