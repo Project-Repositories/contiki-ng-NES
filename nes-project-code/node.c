@@ -39,7 +39,8 @@
 
 #include "contiki.h"
 #include "msg-format.h"
-#include "sys/node-id.h"
+// Can the node-id file be removed, or used?
+#include "sys/node-id.h" 
 #include "sys/log.h"
 #include "net/ipv6/uip-ds6-route.h"
 #include "net/ipv6/uip-sr.h"
@@ -53,7 +54,6 @@
 #include "tcp-socket.h"
 
 #include "dev/leds.h"
-#include "platform/cc26x0-cc13x0/srf06/board-peripherals.h"
 
 
 
@@ -63,7 +63,7 @@
 //DEFINE NODE
 #define ROOT_ID 0
 #define N_NODES 5
-#define IS_ROOT true
+#define IS_ROOT false
 // buffers
 #define BUFSIZE sizeof(Ring_msg)
 static uint8_t inputbuf[BUFSIZE];
@@ -91,6 +91,20 @@ static process_event_t NODE_TO_ROOT_FAILED_EVENT; // Custom event for when node 
 // Election
 static bool is_participating = false;
 static uint8_t elected = -1; // -1 = not defined
+
+void set_participation(bool new_participation_status) {
+  // GREEN LED is manually turned on for election winner, outside this function.
+  is_participating = new_participation_status;
+  if (new_participation_status) {
+    leds_on(LEDS_RED);
+    leds_off(LEDS_GREEN);
+  }
+  else {
+    leds_off(LEDS_RED);
+  }
+  return;
+}
+
 
 
 // TCP socket Documentation
@@ -176,6 +190,7 @@ Election_msg* gen_Election_msg(uint8_t msgType, uint8_t Id) {
 }
 
 
+
 /*    callback functions    */
 void event_callback(struct tcp_socket *s, void *ptr, tcp_socket_event_t event){
     PRINTF("SOCKET: %s | ", (char *)s->ptr);
@@ -257,7 +272,9 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
           #if IS_ROOT
             PRINTF("SUCCESS! Ring message recieved! \n");
             Timestamp_msg* timestampMsg = (Timestamp_msg*) input_data_ptr;
-            // current progress !!!
+            unsigned long msg_ticks = timestampMsg->ticks;
+            PRINTF("Ticks since msg was sent : %lu \n ", clock_time() - msg_ticks);
+
           #else // IS_ROOT
             /* pass message */          
             while(-1 == tcp_socket_send(&socket_out, (uint8_t*) msg, sizeof(Timestamp_msg))){
@@ -338,9 +355,8 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
               PRINTF("ERROR: Couldnt send election message from node... \n");
             }
             free(msg);
-            is_participating = true;
-            leds_off(LEDS_GREEN);
-            leds_on(LEDS_RED);
+            set_participation(true);
+            
           }
           else if ((elect_msg_id < id) && !is_participating) {
             // substitutes its own identifier in the message;
@@ -352,9 +368,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
               PRINTF("ERROR: Couldnt send election message from node... \n");
             }
             free(msg);
-            is_participating = true;
-            leds_off(LEDS_GREEN);
-            leds_on(LEDS_RED);
+            set_participation(true);
           }
           else if ((elect_msg_id < id) && is_participating)
           {
@@ -368,9 +382,8 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
             // send elected msg
             PRINTF("ELECTION: chosen as coordinator... \n");
             PRINTF("received id: %d, own id: %d \n",elect_msg_id, id); // Has to be equal
-            is_participating = false;
+            set_participation(false);
             leds_on(LEDS_GREEN);
-            leds_off(LEDS_RED);
             Election_msg* msg = gen_Election_msg(ELECTED, id);
             while(-1 == tcp_socket_send(&socket_out, (uint8_t*) msg, sizeof(Election_msg))) { 
               PRINTF("ERROR: Couldnt send election message from node... \n");
@@ -381,8 +394,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
         case ELECTED: ;
           Election_msg* elected_msg = (Election_msg*) input_data_ptr;
 
-          is_participating = false;
-          leds_off(LEDS_RED);
+          set_participation(false);
           elected = elected_msg->Id;
           PRINTF("ELECTED: Winner is %d \n",elected);
           if (elected != id) {
@@ -675,9 +687,7 @@ PROCESS_THREAD(status_process, ev, data){
             PRINTF("ERROR: Couldnt send election message from node... \n");
           }
           free(msg);
-          is_participating = true;
-          leds_off(LEDS_GREEN);
-          leds_on(LEDS_RED);
+          set_participation(true);
         }
         etimer_reset(&election_timer);
       }
