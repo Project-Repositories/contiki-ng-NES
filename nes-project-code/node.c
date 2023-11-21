@@ -39,7 +39,7 @@
 
 #include "contiki.h"
 #include "msg-format.h"
-// Can the node-id file be removed, or used?
+// Can the node-id file be removed, or is it used?
 #include "sys/node-id.h" 
 #include "sys/log.h"
 #include "net/ipv6/uip-ds6-route.h"
@@ -63,7 +63,7 @@
 //DEFINE NODE
 #define ROOT_ID 0
 #define N_NODES 5
-#define IS_ROOT false
+#define IS_ROOT true
 // buffers
 #define BUFSIZE sizeof(Ring_msg)
 static uint8_t inputbuf[BUFSIZE];
@@ -78,6 +78,11 @@ char socket_out_name[] = "socket_out";
   static struct tcp_socket socket_root;
   char socket_root_name[] = "socket_root";
   #define VALID_RING() (socket_out.c != NULL)
+  #define STRESS_TEST true
+  #if STRESS_TEST
+    unsigned long stress_test_id; // Use the timestamp to determine if a message is from the current stress_test 
+    unsigned int stress_test_n_received = 0; // counter for messages received during current stress_test 
+  #endif //STRESS_TEST
 #endif
 
 static uip_ipaddr_t self_ip; // ip of the node
@@ -270,10 +275,19 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
         {
         case RING: ;
           #if IS_ROOT
-            PRINTF("SUCCESS! Ring message recieved! \n");
-            Timestamp_msg* timestampMsg = (Timestamp_msg*) input_data_ptr;
-            unsigned long msg_ticks = timestampMsg->ticks;
-            PRINTF("Ticks since msg was sent : %lu \n ", clock_time() - msg_ticks);
+            #if STRESS_TEST
+              Timestamp_msg* timestampMsg = (Timestamp_msg*) input_data_ptr;
+              unsigned long msg_ticks = timestampMsg->ticks;
+              PRINTF("Timestamp MSG received, Timestamp: %lu \n ", msg_ticks);
+              if (msg_ticks == stress_test_id) {
+                stress_test_n_received++;
+              }
+            #else // !STRESS_TEST
+              PRINTF("SUCCESS! Ring message recieved! \n");
+              Timestamp_msg* timestampMsg = (Timestamp_msg*) input_data_ptr;
+              unsigned long msg_ticks = timestampMsg->ticks;
+              PRINTF("Ticks since msg was sent : %lu \n ", clock_time() - msg_ticks);
+            #endif // !STRESS_TEST
 
           #else // IS_ROOT
             /* pass message */          
@@ -282,7 +296,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
             }
             PRINTF("Passed 'RING' message! \n");
 
-          #endif // not IS_ROOT
+          #endif // !IS_ROOT
           break;
         case PASS_IP: ;
           /* code */
@@ -647,13 +661,16 @@ PROCESS_THREAD(root_process, ev, data){
 
 PROCESS_THREAD(status_process, ev, data){
     static struct etimer timer;
-    PROCESS_BEGIN();
-    etimer_set(&timer, CLOCK_SECOND*10);
-
     #if !IS_ROOT
       static struct etimer election_timer;
       etimer_set(&election_timer, CLOCK_SECOND*20);
-    #endif // !IS_ROOT
+    #elif STRESS_TEST
+      static struct etimer stress_timeout_timer;
+      static struct etimer stress_delay_timer;
+    #endif // !IS_ROOT || STRESS_TEST  
+    PROCESS_BEGIN();
+    etimer_set(&timer, CLOCK_SECOND*10);
+
 
     while(1){
       if(id == -1 && id_next == -1){
@@ -663,9 +680,40 @@ PROCESS_THREAD(status_process, ev, data){
       PRINTF("participating in election? %d \n",is_participating);
       #if IS_ROOT
         PRINTF("RING STATUS: %d\n", VALID_RING());
-        PRINTF("CURRENT NODS: %d\n", current_n_nodes);
+        PRINTF("CURRENT NODES: %d\n", current_n_nodes);
 
-        /* Spawn ring messages*/
+        #if STRESS_TEST
+          // Send numerous messages around the ring and keep count of how many get through 
+          int stress_n_msg = 5;
+          int stress_delay = 1;
+          int stress_timeout = 30;
+          etimer_set(&stress_timeout_timer, CLOCK_SECOND*stress_timeout);
+          etimer_set(&stress_delay_timer, CLOCK_SECOND*stress_delay);
+          stress_test_n_received = 0;
+          stress_test_id = clock_time();
+
+          PRINTF("# of MSG | DELAY | TIMEOUT : %d | %d | %d \n", stress_n_msg, stress_delay, stress_timeout);
+          PRINTF("STRESS_TEST ID: %lu \n", stress_test_id);
+          
+          Timestamp_msg* new_msg = malloc(sizeof(Timestamp_msg));
+          new_msg->hdr.msg_type = RING;
+          new_msg->ticks = stress_test_id; 
+          for(int j = 0; j < stress_n_msg; j++) {
+            j++;
+            PRINTF("Sending ring message... \n");
+            while(-1 == tcp_socket_send(&socket_out, (uint8_t*) new_msg, sizeof(Timestamp_msg))){
+              PRINTF("ERROR: Couldnt spawn ring message from root... \n");
+            } 
+            PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stress_delay_timer));
+            etimer_reset(&stress_delay_timer);
+            
+          }
+          free(new_msg);
+          PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stress_timeout_timer) || (stress_test_n_received == stress_n_msg));
+          PRINTF("%d MESSAGES RECEIVED / %d MESSAGES SENT \n",stress_test_n_received,stress_n_msg);
+
+        #else // !STRESS_TEST
+        /* Spawn ring messages that determines the latency*/
         if (socket_out.c != NULL){
           PRINTF("Sending ring message... \n");
           Timestamp_msg* new_msg = malloc(sizeof(Timestamp_msg));
@@ -676,6 +724,7 @@ PROCESS_THREAD(status_process, ev, data){
           }
           free(new_msg);
         }
+        #endif // !STRESS_TEST
 
       #elif !IS_ROOT
       if ((-1 != id) && (-1 != id_next) && etimer_expired(&election_timer) && (!is_participating)) {
