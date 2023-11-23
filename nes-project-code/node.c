@@ -80,8 +80,8 @@ char socket_out_name[] = "socket_out";
   #define VALID_RING() (socket_out.c != NULL)
   #define STRESS_TEST true
   #if STRESS_TEST
-    unsigned long stress_test_id; // Use the timestamp to determine if a message is from the current stress_test 
-    unsigned int stress_test_n_received = 0; // counter for messages received during current stress_test 
+    static unsigned long stress_test_id; // Use the timestamp to determine if a message is from the current stress_test 
+    static unsigned int stress_test_n_received = 0; // counter for messages received during current stress_test 
   #endif //STRESS_TEST
 #endif
 
@@ -663,13 +663,25 @@ PROCESS_THREAD(status_process, ev, data){
     static struct etimer timer;
     #if !IS_ROOT
       static struct etimer election_timer;
-      etimer_set(&election_timer, CLOCK_SECOND*20);
     #elif STRESS_TEST
+      static int stress_n_msg = 40;
+      static int stress_delay = 3;
+      static int stress_timeout = 2;
+      static int j = 0;
+      static Timestamp_msg* new_msg; //= malloc(sizeof(Timestamp_msg));
       static struct etimer stress_timeout_timer;
-      //static struct etimer stress_delay_timer;
+      static struct etimer stress_delay_timer;
+      
     #endif // !IS_ROOT || STRESS_TEST  
     PROCESS_BEGIN();
     etimer_set(&timer, CLOCK_SECOND*10);
+    
+    #if !IS_ROOT
+      etimer_set(&election_timer, CLOCK_SECOND*20);
+    #elif STRESS_TEST
+      etimer_set(&stress_timeout_timer, CLOCK_SECOND*stress_timeout);
+      etimer_set(&stress_delay_timer, CLOCK_SECOND>>stress_delay);
+    #endif
 
 
     while(1){
@@ -683,35 +695,36 @@ PROCESS_THREAD(status_process, ev, data){
         PRINTF("CURRENT NODES: %d\n", current_n_nodes);
 
         #if STRESS_TEST
-          // Send numerous messages around the ring and keep count of how many get through 
-          int stress_n_msg = 5;
-          //int stress_delay = 1;
-          int stress_timeout = 30;
-          etimer_set(&stress_timeout_timer, CLOCK_SECOND*stress_timeout);
-          //etimer_set(&stress_delay_timer, CLOCK_SECOND*stress_delay);
-          stress_test_n_received = 0;
-          stress_test_id = clock_time();
+          if (socket_out.c != NULL){
+            // Send numerous messages around the ring and keep count of how many get through 
 
-          PRINTF("# of MSG | TIMEOUT : %d | %d  \n", stress_n_msg, stress_timeout);
-          PRINTF("STRESS_TEST ID: %lu \n", stress_test_id);
-          
-          Timestamp_msg* new_msg = malloc(sizeof(Timestamp_msg));
-          new_msg->hdr.msg_type = RING;
-          new_msg->ticks = stress_test_id; 
-          for(int j = 0; j < stress_n_msg; j++) {
-            j++;
-            PRINTF("Sending ring message... \n");
-            while(-1 == tcp_socket_send(&socket_out, (uint8_t*) new_msg, sizeof(Timestamp_msg))){
-              PRINTF("ERROR: Couldnt spawn ring message from root... \n");
-            } 
-            //PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stress_delay_timer));
-            //etimer_reset(&stress_delay_timer);
+            //etimer_set(&stress_delay_timer, CLOCK_SECOND*stress_delay);
+            stress_test_n_received = 0;
+            stress_test_id = clock_time();
+
+            PRINTF("# of MSG | TIMEOUT : %d | %d  \n", stress_n_msg, stress_timeout);
+            PRINTF("STRESS_TEST ID: %lu \n", stress_test_id);
             
-          }
-          free(new_msg);
-          PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stress_timeout_timer) || (stress_test_n_received == stress_n_msg));
-          PRINTF("%d MESSAGES RECEIVED / %d MESSAGES SENT \n",stress_test_n_received,stress_n_msg);
+            new_msg = malloc(sizeof(Timestamp_msg));
+            new_msg->hdr.msg_type = RING;
+            new_msg->ticks = stress_test_id; 
+            j = 0;
+            for (j=0; j<stress_n_msg;j++) {
 
+              PRINTF("Sending ring message... \n");
+                while(-1 == tcp_socket_send(&socket_out, (uint8_t*) new_msg, sizeof(Timestamp_msg))){
+                  PRINTF("ERROR: Couldnt spawn ring message from root... \n");
+                }
+                
+                etimer_set(&stress_delay_timer,CLOCK_SECOND>>stress_delay);
+                PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stress_delay_timer));
+              }
+              
+            free(new_msg);
+            etimer_set(&stress_timeout_timer,CLOCK_SECOND*stress_timeout);
+            PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stress_timeout_timer));
+            PRINTF("%d MESSAGES RECEIVED / %d MESSAGES SENT \n",stress_test_n_received,stress_n_msg);
+          }
         #else // !STRESS_TEST
         /* Spawn ring messages that determines the latency*/
         if (socket_out.c != NULL){
@@ -741,10 +754,9 @@ PROCESS_THREAD(status_process, ev, data){
         etimer_reset(&election_timer);
       }
       #endif // !IS_ROOT
-
-      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
+      PRINTF("status resetting .... \n");
       etimer_reset(&timer);
-
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
     }
 
     PROCESS_END();
