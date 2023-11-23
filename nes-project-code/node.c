@@ -666,7 +666,7 @@ PROCESS_THREAD(status_process, ev, data){
       etimer_set(&election_timer, CLOCK_SECOND*20);
     #elif STRESS_TEST
       static struct etimer stress_timeout_timer;
-      static struct etimer stress_delay_timer;
+      //static struct etimer stress_delay_timer;
     #endif // !IS_ROOT || STRESS_TEST  
     PROCESS_BEGIN();
     etimer_set(&timer, CLOCK_SECOND*10);
@@ -692,7 +692,7 @@ PROCESS_THREAD(status_process, ev, data){
           stress_test_n_received = 0;
           stress_test_id = clock_time();
 
-          PRINTF("# of MSG | TIMEOUT : %d | %d | %d \n", stress_n_msg, stress_timeout);
+          PRINTF("# of MSG | TIMEOUT : %d | %d  \n", stress_n_msg, stress_timeout);
           PRINTF("STRESS_TEST ID: %lu \n", stress_test_id);
           
           Timestamp_msg* new_msg = malloc(sizeof(Timestamp_msg));
