@@ -685,14 +685,14 @@ PROCESS_THREAD(status_process, ev, data){
         #if STRESS_TEST
           // Send numerous messages around the ring and keep count of how many get through 
           int stress_n_msg = 5;
-          int stress_delay = 1;
+          //int stress_delay = 1;
           int stress_timeout = 30;
           etimer_set(&stress_timeout_timer, CLOCK_SECOND*stress_timeout);
-          etimer_set(&stress_delay_timer, CLOCK_SECOND*stress_delay);
+          //etimer_set(&stress_delay_timer, CLOCK_SECOND*stress_delay);
           stress_test_n_received = 0;
           stress_test_id = clock_time();
 
-          PRINTF("# of MSG | DELAY | TIMEOUT : %d | %d | %d \n", stress_n_msg, stress_delay, stress_timeout);
+          PRINTF("# of MSG | TIMEOUT : %d | %d | %d \n", stress_n_msg, stress_timeout);
           PRINTF("STRESS_TEST ID: %lu \n", stress_test_id);
           
           Timestamp_msg* new_msg = malloc(sizeof(Timestamp_msg));
@@ -704,8 +704,8 @@ PROCESS_THREAD(status_process, ev, data){
             while(-1 == tcp_socket_send(&socket_out, (uint8_t*) new_msg, sizeof(Timestamp_msg))){
               PRINTF("ERROR: Couldnt spawn ring message from root... \n");
             } 
-            PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stress_delay_timer));
-            etimer_reset(&stress_delay_timer);
+            //PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stress_delay_timer));
+            //etimer_reset(&stress_delay_timer);
             
           }
           free(new_msg);
