@@ -73,25 +73,53 @@ static struct tcp_socket socket_in;
 char socket_in_name[] = "socket_in";
 static struct tcp_socket socket_out;
 char socket_out_name[] = "socket_out";
+
+// ip of the node
+static uip_ipaddr_t self_ip; 
+
+
 #if IS_ROOT
   static uint8_t rootbuf[BUFSIZE];
   static struct tcp_socket socket_root;
   char socket_root_name[] = "socket_root";
   #define VALID_RING() (socket_out.c != NULL)
-  #define STRESS_TEST true
+
+  // determines if STRESS_TEST will be run by the node. if disabled, latency of ring will be measured instead.
+  #define STRESS_TEST false
   #if STRESS_TEST
     static unsigned long stress_test_id; // Use the timestamp to determine if a message is from the current stress_test 
     static unsigned int stress_test_n_received = 0; // counter for messages received during current stress_test 
+    static int stress_n_msg = 20;
+    static int stress_delay = 3;
+    static int stress_timeout = 5;
+
   #endif //STRESS_TEST
+
+#else // !IS_ROOT
+  // determines if elections will be initialized by the node
+  #define RUN_ELECTIONS true
+  #if RUN_ELECTIONS
+    // seconds between each node initiating the election process
+    #define ELECTION_FREQUENCY 20
+  #endif
+
+  
+  // Events
+  static process_event_t NODE_TO_ROOT_SUCCESS_EVENT; // Custom event for when node has connected to root
+  static process_event_t NODE_TO_ROOT_FAILED_EVENT; // Custom event for when node has failed to connect to root
+#endif // !IS_ROOT
+
+
+// Processes
+PROCESS(status_process, "Sender");
+#if IS_ROOT
+  PROCESS(root_process, "RPL Root");
+  AUTOSTART_PROCESSES(&root_process);
+#else
+  PROCESS(node_process, "RPL Node");
+  AUTOSTART_PROCESSES(&node_process);
 #endif
 
-static uip_ipaddr_t self_ip; // ip of the node
-
-// Events
-#if !IS_ROOT
-static process_event_t NODE_TO_ROOT_SUCCESS_EVENT; // Custom event for when node has connected to root
-static process_event_t NODE_TO_ROOT_FAILED_EVENT; // Custom event for when node has failed to connect to root
-#endif
 
 // Election
 static bool is_participating = false;
@@ -111,60 +139,43 @@ void set_participation(bool new_participation_status) {
 }
 
 
-
-// TCP socket Documentation
-
 /*---------------------------------------------------------------------------*/
-
-PROCESS(status_process, "Sender");
-#if IS_ROOT
-  PROCESS(root_process, "RPL Root");
-  AUTOSTART_PROCESSES(&root_process);
-#else
-  PROCESS(node_process, "RPL Node");
-  AUTOSTART_PROCESSES(&node_process);
-#endif
-
-// Get Hardware ID somehow - retrieve from header file?
-// We could use MAC address to determine which node serves as the root/coordinator.
-// or maybe develop a new custom shell command 
-// shell_command_set_register(custom_shell_command_set);
 
 // if node is root make gen -1 to say not set yet
 static int id = -1;
 static int id_next = -1;
+
 #if IS_ROOT
-static int IdArr[N_NODES];
-static int current_n_nodes = 0;
+  static int IdArr[N_NODES];
+  static int current_n_nodes = 0;
 
-
-bool int_is_in_array(int val, int* arr, size_t arr_len) {
-  for (size_t i = 0; i < arr_len; i++) {
-    if (val == arr[i]) {
-      return true;
-    } 
+  bool int_is_in_array(int val, int* arr, size_t arr_len) {
+    for (size_t i = 0; i < arr_len; i++) {
+      if (val == arr[i]) {
+        return true;
+      } 
+    }
+    return false;
   }
-  return false;
-}
 
-int gen_id(){
-  int id_list[] = {3,6,2,8,4};
-  int new_id;
-  
-  //generates a random, new ID between 1 and 30
-  /*
-  int new_id;
-  do {
-   new_id =(rand() % 30) +1;
-  }while (int_is_in_array(new_id, IdArr, N_NODES));
-  IdArr[current_n_nodes] = new_id;
-  */
+  int gen_id(){
+    int id_list[] = {3,6,2,8,4};
+    int new_id;
+    
+    //generates a random, new ID between 1 and 30
+    /*
+    int new_id;
+    do {
+    new_id =(rand() % 30) +1;
+    }while (int_is_in_array(new_id, IdArr, N_NODES));
+    IdArr[current_n_nodes] = new_id;
+    */
 
-  new_id = id_list[current_n_nodes];
-  IdArr[current_n_nodes] = new_id;
-  current_n_nodes++;
-  return new_id;
-}
+    new_id = id_list[current_n_nodes];
+    IdArr[current_n_nodes] = new_id;
+    current_n_nodes++;
+    return new_id;
+  }
 #endif // IS_ROOT
 static struct etimer sleeptimer;
 void wait(int seconds){
@@ -283,6 +294,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
                 stress_test_n_received++;
               }
             #else // !STRESS_TEST
+              // Latency measurement
               PRINTF("SUCCESS! Ring message recieved! \n");
               Timestamp_msg* timestampMsg = (Timestamp_msg*) input_data_ptr;
               unsigned long msg_ticks = timestampMsg->ticks;
@@ -443,7 +455,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
                    Therefore it needs to construct a new ip_msg with that ip.
                    */
 
-                  // Generate new msg, the ip should be however the root is current talking to on socket out
+                  // Generate new msg, the ip should be whoever the root is current talking to on socket out
                   Ip_msg* new_msg = gen_Ip_msg(JOIN_SUCC,new_node_id,id_next, &socket_out.c->ripaddr);
                   //store id for next node
                   id_next = new_node_id;
@@ -514,9 +526,9 @@ PROCESS_THREAD(node_process, ev, data)
   NETSTACK_MAC.on();
 
 
-  // Peripheral for 26XX
-  leds_off(LEDS_GREEN);
-  leds_off(LEDS_RED);
+  // Peripheral LEDs for 26XX. Both enabled until it joins the network
+  leds_on(LEDS_GREEN);
+  leds_on(LEDS_RED);
 
   // register sockets
   while (-1 == tcp_socket_register(&socket_in, &socket_in_name, inputbuf, sizeof(inputbuf),NULL,0,data_callback,event_callback)){
@@ -595,9 +607,12 @@ PROCESS_THREAD(node_process, ev, data)
   }
   PRINTF("Node sending join message succesfully! \n");
 
+  // Disable both LEDs, now that it has joined the network.
+  leds_off(LEDS_GREEN);
+  leds_off(LEDS_RED);
   /* Setup a periodic timer that expires after 10 seconds. */
 
-  
+
     process_start(&status_process, NULL);
     PROCESS_END();
   }
@@ -661,12 +676,9 @@ PROCESS_THREAD(root_process, ev, data){
 
 PROCESS_THREAD(status_process, ev, data){
     static struct etimer timer;
-    #if !IS_ROOT
+    #if (!IS_ROOT) && RUN_ELECTIONS
       static struct etimer election_timer;
     #elif STRESS_TEST
-      static int stress_n_msg = 40;
-      static int stress_delay = 3;
-      static int stress_timeout = 2;
       static int j = 0;
       static Timestamp_msg* new_msg; //= malloc(sizeof(Timestamp_msg));
       static struct etimer stress_timeout_timer;
@@ -674,10 +686,10 @@ PROCESS_THREAD(status_process, ev, data){
       
     #endif // !IS_ROOT || STRESS_TEST  
     PROCESS_BEGIN();
-    etimer_set(&timer, CLOCK_SECOND*10);
+    etimer_set(&timer, CLOCK_SECOND*20);
     
-    #if !IS_ROOT
-      etimer_set(&election_timer, CLOCK_SECOND*20);
+    #if (!IS_ROOT) && RUN_ELECTIONS
+      etimer_set(&election_timer, CLOCK_SECOND * ELECTION_FREQUENCY);
     #elif STRESS_TEST
       etimer_set(&stress_timeout_timer, CLOCK_SECOND*stress_timeout);
       etimer_set(&stress_delay_timer, CLOCK_SECOND>>stress_delay);
@@ -696,9 +708,7 @@ PROCESS_THREAD(status_process, ev, data){
 
         #if STRESS_TEST
           if (socket_out.c != NULL){
-            // Send numerous messages around the ring and keep count of how many get through 
-
-            //etimer_set(&stress_delay_timer, CLOCK_SECOND*stress_delay);
+            // When the ring is fully formed, send numerous messages around the ring and keep count of how many get through 
             stress_test_n_received = 0;
             stress_test_id = clock_time();
 
@@ -716,8 +726,10 @@ PROCESS_THREAD(status_process, ev, data){
                   PRINTF("ERROR: Couldnt spawn ring message from root... \n");
                 }
                 
+                
                 etimer_set(&stress_delay_timer,CLOCK_SECOND>>stress_delay);
                 PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&stress_delay_timer));
+                
               }
               
             free(new_msg);
@@ -739,7 +751,7 @@ PROCESS_THREAD(status_process, ev, data){
         }
         #endif // !STRESS_TEST
 
-      #elif !IS_ROOT
+      #elif (!IS_ROOT) && RUN_ELECTIONS
       if ((-1 != id) && (-1 != id_next) && etimer_expired(&election_timer) && (!is_participating)) {
         /* Start election message*/
         if (socket_out.c != NULL) {
