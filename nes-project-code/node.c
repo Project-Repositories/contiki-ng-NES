@@ -342,9 +342,6 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
             free(new_msg);
             break;
           }
-        case DROP:
-          /* code */
-          break;
         case JOIN_SUCC:
           /* CHECK LENGTH */
           if (input_data_len != sizeof(Ip_msg)){
@@ -364,9 +361,6 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
 
 
 
-          break;
-        case JOIN_PRE:
-          /* code */
           break;
         case ELECTION: ;
           Election_msg* election_msg = (Election_msg*) input_data_ptr;
