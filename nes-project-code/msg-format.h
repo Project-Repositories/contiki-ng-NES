@@ -4,7 +4,7 @@
 #define PASS_IP 1 // hdr | Ip | Id
 
 /* hdr id for messages used to connect to a node, and tell the node what its new succor is*/
-#define JOIN_SUCC 2  // hdr | Ip | Id | Id
+#define JOIN_SUCC 2  // hdr | Id | Id | Ip
 
 /* hdr id for election messages*/
 #define ELECTION 3 // hdr | Id
@@ -15,7 +15,7 @@
 /* hdr id for join request messages - ONLY FOR ROOT */
 #define REQUEST 5
 
-/* hdr id for Ring message */
+/* hdr id for Ring message - used as dummy/test messages */
 #define RING 6
 
 typedef struct{
