@@ -39,8 +39,6 @@
 
 #include "contiki.h"
 #include "msg-format.h"
-// Can the node-id file be removed, or is it used?
-#include "sys/node-id.h" 
 #include "sys/log.h"
 #include "net/ipv6/uip-ds6-route.h"
 #include "net/ipv6/uip-sr.h"
@@ -63,7 +61,7 @@
 //DEFINE NODE
 #define ROOT_ID 0
 #define N_NODES 5
-#define IS_ROOT true
+#define IS_ROOT false
 // buffers
 #define BUFSIZE sizeof(Ring_msg)
 static uint8_t inputbuf[BUFSIZE];
@@ -123,7 +121,7 @@ PROCESS(status_process, "Sender");
 
 // Election
 static bool is_participating = false;
-static uint8_t elected = -1; // -1 = not defined
+static uint8_t elected = -1;
 
 void set_participation(bool new_participation_status) {
   // GREEN LED is manually turned on for election winner, outside this function.
@@ -141,7 +139,7 @@ void set_participation(bool new_participation_status) {
 
 /*---------------------------------------------------------------------------*/
 
-// if node is root make gen -1 to say not set yet
+// -1 indicates id is not yet set
 static int id = -1;
 static int id_next = -1;
 
@@ -161,15 +159,6 @@ static int id_next = -1;
   int gen_id(){
     int id_list[] = {3,6,2,8,4};
     int new_id;
-    
-    //generates a random, new ID between 1 and 30
-    /*
-    int new_id;
-    do {
-    new_id =(rand() % 30) +1;
-    }while (int_is_in_array(new_id, IdArr, N_NODES));
-    IdArr[current_n_nodes] = new_id;
-    */
 
     new_id = id_list[current_n_nodes];
     IdArr[current_n_nodes] = new_id;
@@ -177,10 +166,7 @@ static int id_next = -1;
     return new_id;
   }
 #endif // IS_ROOT
-static struct etimer sleeptimer;
-void wait(int seconds){
-  etimer_set(&sleeptimer, CLOCK_SECOND*seconds);
-}
+
 
 /* Allocates and generates an Ip_msg and return a pointer to it.
    Remember to FREE msg after use!
@@ -208,14 +194,21 @@ Election_msg* gen_Election_msg(uint8_t msgType, uint8_t Id) {
 
 
 /*    callback functions    */
+
+
+
+/// @brief called when network events trigger on sockets, handles events
+/// @param s TCP socket for the event trigger
+/// @param ptr optional pointer, unused
+/// @param event the socket event
 void event_callback(struct tcp_socket *s, void *ptr, tcp_socket_event_t event){
+    // 
     PRINTF("SOCKET: %s | ", (char *)s->ptr);
     switch (event)
     {
     case TCP_SOCKET_CONNECTED:
       PRINTF("EVENT: TCP_SOCKET_CONNECTED \n");
-
-      /* If the callback comes from socket out
+      /* If the callback comes from socket_out
          Then we post an event to the process
       */
       #if !IS_ROOT
@@ -232,12 +225,9 @@ void event_callback(struct tcp_socket *s, void *ptr, tcp_socket_event_t event){
       break;
     case TCP_SOCKET_CLOSED:
       PRINTF("EVENT: TCP_SOCKET_CLOSED \n");
-      /* code */
       break;
     case TCP_SOCKET_TIMEDOUT:
       PRINTF("EVENT: TCP_SOCKET_TIMEDOUT \n");
-      /* code */
-
       #if !IS_ROOT
       if (strcmp((char*) s->ptr,"socket_out") == 0){
         int status = process_post(&node_process, NODE_TO_ROOT_FAILED_EVENT, NULL);
@@ -252,7 +242,6 @@ void event_callback(struct tcp_socket *s, void *ptr, tcp_socket_event_t event){
       break;
     case TCP_SOCKET_ABORTED:
       PRINTF("EVENT: TCP_SOCKET_ABORTED \n");
-      /* code */
       #if !IS_ROOT
       if (strcmp((char*) s->ptr, "socket_out")==0){
         int status = process_post(&node_process, NODE_TO_ROOT_FAILED_EVENT, NULL);
@@ -268,7 +257,6 @@ void event_callback(struct tcp_socket *s, void *ptr, tcp_socket_event_t event){
       break;
     case TCP_SOCKET_DATA_SENT:
       PRINTF("EVENT: TCP_SOCKET_DATA_SENT \n");
-      /* code */
       break;
     default:
       PRINTF("EVENT: ERROR_UNKOWN_EVENT \n");
@@ -277,9 +265,14 @@ void event_callback(struct tcp_socket *s, void *ptr, tcp_socket_event_t event){
 
 }
 
-int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr, int input_data_len){
-    // Think it should just consume data directly?
-    
+/*  @brief called when a message is received, handles messages 
+    @param s TCP socket that received the message
+    @param ptr optional pointer, unused
+    @param input_data_ptr ptr to data of message
+    @param input_data_len size of data
+    @return 0, the amount of data left
+*/
+int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr, int input_data_len){  
     Ring_msg* msg = (Ring_msg*)input_data_ptr;
     PRINTF("SOCKET %s | DATA CALLBACK: %d, LENGTH: %d \n", (char*) s->ptr, msg->hdr.msg_type, input_data_len);
     switch (msg->hdr.msg_type)
@@ -294,7 +287,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
                 stress_test_n_received++;
               }
             #else // !STRESS_TEST
-              // Latency measurement
+              /* Latency measurement */
               PRINTF("SUCCESS! Ring message recieved! \n");
               Timestamp_msg* timestampMsg = (Timestamp_msg*) input_data_ptr;
               unsigned long msg_ticks = timestampMsg->ticks;
@@ -304,20 +297,19 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
           #else // IS_ROOT
             /* pass message */          
             while(-1 == tcp_socket_send(&socket_out, (uint8_t*) msg, sizeof(Timestamp_msg))){
-              PRINTF("ERROR: couldnt send 'RING' message... \n");
+              PRINTF("Error occured during TCP send... \n");
             }
             PRINTF("Passed 'RING' message! \n");
 
           #endif // !IS_ROOT
           break;
         case PASS_IP: ;
-          /* code */
           int Id1 = msg->Ip_msg.Id1;
-          // pass message
+          /* pass message */ 
           PRINTF("PASS_IP, with ID: %d \n", Id1);
           if (Id1 > id_next && id_next != ROOT_ID) { // root edge case to avoid infinite message passing
             while(-1 == tcp_socket_send(&socket_out, (uint8_t* )msg, sizeof(Ip_msg))) {
-              PRINTF("ERROR: Couldn't pass IP_msg forward... \n");
+              PRINTF("Error occured during TCP connection... \n");
             }
             break;
           }
@@ -327,40 +319,29 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
               Therefore it needs to construct a new ip_msg with that ip.
             */
 
-
-
-            /* Construct join_succ message to new node*/
+            /* Construct JOIN_SUCC message to new node*/
             Ip_msg* new_msg = gen_Ip_msg(JOIN_SUCC,Id1,id_next, &socket_out.c->ripaddr);
 
             while(-1 == tcp_socket_connect(&socket_out, &msg->Ip_msg.ipaddr, TCP_PORT_IN)){
-              PRINTF("ERROR: couldnt connect to new node... \n");
+              PRINTF("Error occured during TCP connection... \n");
             }
-            id_next = Id1; // update id
+            id_next = Id1;
             while(-1 == tcp_socket_send(&socket_out, (uint8_t*) new_msg, sizeof(Ip_msg))){
-                PRINTF("ERROR: Couldnt send 'JOIN_SUCC' to new node");
+                PRINTF("Error occured during TCP send... \n");
             }
             free(new_msg);
             break;
           }
         case JOIN_SUCC:
-          /* CHECK LENGTH */
-          if (input_data_len != sizeof(Ip_msg)){
-            PRINTF("JOIN_SUCC: INVALID DATA LENGTH %d \n", input_data_len);
-          }
-          
           PRINTF("Switching socket connection... \n"); 
           Ip_msg* ipMsg = (Ip_msg*) input_data_ptr;
           id = ipMsg->Id1;
           id_next = ipMsg->Id2;
           // connect to next node
           while(-1 == tcp_socket_connect(&socket_out, &ipMsg->ipaddr, TCP_PORT_IN)){
-              PRINTF("TCP socket OUT connection failed... \n");
+              PRINTF("Error occured during TCP connection... \n");
           }
           PRINTF("TCP socket connection succeeded! \n");
-          
-
-
-
           break;
         case ELECTION: ;
           Election_msg* election_msg = (Election_msg*) input_data_ptr;
@@ -372,7 +353,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
             PRINTF("ELECTION: forwarding id... \n");
             Election_msg* msg = gen_Election_msg(ELECTION, elect_msg_id);
             while(-1 == tcp_socket_send(&socket_out, (uint8_t*) msg, sizeof(Election_msg))) {
-              PRINTF("ERROR: Couldnt send election message from node... \n");
+              PRINTF("Error occured during TCP send... \n");
             }
             free(msg);
             set_participation(true);
@@ -385,15 +366,14 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
             PRINTF("ELECTION: substituting id... \n");
             Election_msg* msg = gen_Election_msg(ELECTION, id);
             while(-1 == tcp_socket_send(&socket_out, (uint8_t*) msg, sizeof(Election_msg))) { 
-              PRINTF("ERROR: Couldnt send election message from node... \n");
+              PRINTF("Error occured during TCP send... \n");
             }
             free(msg);
             set_participation(true);
           }
           else if ((elect_msg_id < id) && is_participating)
           {
-              // discards the message (i.e., it does not forward the message) -> do nothing
-              PRINTF("ELECTION: discarding msg... \n");
+              PRINTF("ELECTION: discarding message... \n");
           }
           else { 
             // the received identifier is that of the receiver itself
@@ -406,7 +386,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
             leds_on(LEDS_GREEN);
             Election_msg* msg = gen_Election_msg(ELECTED, id);
             while(-1 == tcp_socket_send(&socket_out, (uint8_t*) msg, sizeof(Election_msg))) { 
-              PRINTF("ERROR: Couldnt send election message from node... \n");
+              PRINTF("Error occured during TCP send... \n");
             }
             free(msg);
           }
@@ -420,7 +400,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
           if (elected != id) {
             Election_msg* msg = gen_Election_msg(ELECTED, elected);
             while(-1 == tcp_socket_send(&socket_out, (uint8_t*) msg, sizeof(Election_msg))) { 
-              PRINTF("ERROR: Couldnt send election message from node... \n");
+              PRINTF("Error occured during TCP send... \n");
             }
             free(msg);
           }
@@ -439,7 +419,7 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
                 
                 PRINTF("SENDING PASS_IP MESSAGE, ID %d \n", new_node_id);
                 while(-1 == tcp_socket_send(&socket_out, (uint8_t*) new_msg, sizeof(Ip_msg))){
-                  PRINTF("ERROR: sending message to first node failed... \n");
+                  PRINTF("Error occured during TCP send... \n");
                 }
                 PRINTF("Succesfully send PASS_IP message to first node! \n");
               }
@@ -455,11 +435,11 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
                   id_next = new_node_id;
                   PRINTF("FAILSAFE: "); uiplib_ipaddr_print(&socket_out.c->ripaddr); PRINTF("\n");
                   while(-1 == tcp_socket_connect(&socket_out, &msg->Ip_msg.ipaddr,TCP_PORT_IN) ){
-                        PRINTF("TCP socket connection failed... \n");
+                        PRINTF("Error occured during TCP connection... \n");
                       }
 
                   while(-1 == tcp_socket_send(&socket_out, (uint8_t*) new_msg, sizeof(Ip_msg))){
-                    PRINTF("ERROR: sending message to first node failed... \n");
+                    PRINTF("Error occured during TCP send... \n");
                   }
                   PRINTF("Succesfully send join message to first node! \n");
                   free(new_msg);
@@ -467,24 +447,20 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
 
 
           }
-          else{ // EDGE CASE - FIRST NODE JOINING RING
+          else{ 
+            // EDGE CASE - FIRST NODE JOINING RING
             PRINTF("FIRST NODE JOINING! \n");
             // Close root socket, to allow other nodes to join
             // try and connect to first node
             PRINTF("REQUEST MESSAGE FROM NODE WITH IP: "); uiplib_ipaddr_print(&msg->Ip_msg.ipaddr); PRINTF(" |\n");
             while(-1 == tcp_socket_connect(&socket_out, &msg->Ip_msg.ipaddr,TCP_PORT_IN) ){
-              PRINTF("TCP socket connection failed... \n");
+              PRINTF("Error occured during TCP connection... \n");
             }
-            //process_post(&root_process, PROCESS_EVENT_CONNECT, &msg->Ip_msg.ipaddr);
             PRINTF("TCP socket connection succeeded! \n");
-
-
-            //store id for next node
             id_next = gen_id();
-            //Generate new message
             Ip_msg* new_msg = gen_Ip_msg(JOIN_SUCC,id_next,id, &self_ip);
             while(-1 == tcp_socket_send(&socket_out, (uint8_t*) new_msg, sizeof(Ip_msg))){
-              PRINTF("ERROR: sending message to first node failed... \n");
+              PRINTF("Error occured during TCP send... \n");
             }
             PRINTF("Succesfully send join message to first node! \n");
             free(new_msg);
@@ -509,16 +485,16 @@ int data_callback(struct tcp_socket *s, void *ptr, const uint8_t *input_data_ptr
 
 PROCESS_THREAD(node_process, ev, data)
 {
+  static struct etimer sleep_timer;
   long ticks = clock_time();
   long timestamp = clock_seconds();
   PRINTF("ticks | timestamp = %lu | %lu \n !!!",ticks,timestamp);
-  static struct etimer sleep_timer;
   PROCESS_BEGIN();
   NODE_TO_ROOT_FAILED_EVENT = process_alloc_event(); // allocate event number
   NODE_TO_ROOT_SUCCESS_EVENT = process_alloc_event(); // allocate event number
 
   NETSTACK_MAC.on();
-
+  etimer_set(&sleep_timer, CLOCK_SECOND*2);
 
   // Peripheral LEDs for 26XX. Both enabled until it joins the network
   leds_on(LEDS_GREEN);
@@ -527,8 +503,6 @@ PROCESS_THREAD(node_process, ev, data)
   // register sockets
   while (-1 == tcp_socket_register(&socket_in, &socket_in_name, inputbuf, sizeof(inputbuf),NULL,0,data_callback,event_callback)){
         PRINTF("ERROR: Socket registration 'IN' failed... \n");
-        wait(1);
-        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
         ticks = clock_time();
         timestamp = clock_seconds();
         PRINTF("ticks | timestamp = %lu | %lu \n !!!",ticks,timestamp);
@@ -536,13 +510,9 @@ PROCESS_THREAD(node_process, ev, data)
   }
   while (-1 == tcp_socket_register(&socket_out, &socket_out_name, NULL,0, outputbuf, sizeof(outputbuf),data_callback,event_callback)){
         PRINTF("ERROR: Socket registration 'OUT' failed... \n");
-        wait(1);
-        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
   }
   while (-1 == tcp_socket_listen(&socket_in, TCP_PORT_IN) ){
-        PRINTF("ERROR: In socket failed to listen \n");
-        wait(1);
-        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
+        PRINTF("ERROR: socket_in failed to listen \n");
   }
 
 
@@ -551,13 +521,10 @@ PROCESS_THREAD(node_process, ev, data)
   
   while(!NETSTACK_ROUTING.node_is_reachable || !NETSTACK_ROUTING.get_root_ipaddr(&dest_ipaddr)){
         PRINTF("ERROR: Node could not recieve 'root' IP... \n");
-        wait(1);
         PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
-        
-        
+        etimer_reset(&sleep_timer);
   }
   PRINTF("HOST THIS NODE: "); uiplib_ipaddr_print(&dest_ipaddr); PRINTF("\n");
-    /* get ip addresss of itself*/
   memcpy(&self_ip, &uip_ds6_get_global(ADDR_PREFERRED)->ipaddr, sizeof(uip_ipaddr_t));
   PRINTF("IP THIS NODE: "); uiplib_ipaddr_print(&self_ip); PRINTF("\n");
 
@@ -570,21 +537,18 @@ PROCESS_THREAD(node_process, ev, data)
   */
   while (true){
     while(-1 == tcp_socket_connect(&socket_out, &dest_ipaddr, TCP_PORT_ROOT)){
-        PRINTF("ERROR: failed to send connection request to root... \n");
-        wait(1);
-        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
+        PRINTF("Error occured during TCP connection... \n");
     }
     PRINTF("Node send connection request to root! \n");
     PROCESS_WAIT_EVENT_UNTIL(ev == NODE_TO_ROOT_FAILED_EVENT || ev == NODE_TO_ROOT_SUCCESS_EVENT);
     if (ev == NODE_TO_ROOT_SUCCESS_EVENT ){
-       //dont try and reconnect - hop out of while loop
        break;
     }
     else if (ev == NODE_TO_ROOT_FAILED_EVENT){
       PRINTF("Node failed to connect to root, will try again... \n");
     }
     else{
-      PRINTF("Undefined event... something went wrong? \n");
+      PRINTF("Undefined event... something went wrong \n");
     }
   }
   PRINTF("Node has connected to root successfully! \n");
@@ -595,17 +559,13 @@ PROCESS_THREAD(node_process, ev, data)
   msg.hdr.msg_type = REQUEST;
   memcpy(&msg.ipaddr, &self_ip, sizeof(uip_ipaddr_t));
   while(-1 == tcp_socket_send(&socket_out, (uint8_t*)&msg, sizeof(Ip_msg))){
-      PRINTF("ERROR: failed to send REQUEST message \n");
-      wait(1);
-      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
+      PRINTF("Error occured during TCP send... \n");
   }
   PRINTF("Node sending join message succesfully! \n");
 
   // Disable both LEDs, now that it has joined the network.
-  leds_off(LEDS_GREEN);
-  leds_off(LEDS_RED);
-  /* Setup a periodic timer that expires after 10 seconds. */
-
+    leds_off(LEDS_GREEN);
+    leds_off(LEDS_RED);
 
     process_start(&status_process, NULL);
     PROCESS_END();
@@ -617,7 +577,6 @@ PROCESS_THREAD(node_process, ev, data)
 /*--------------------------------ROOT-----------------------------------*/
 PROCESS_THREAD(root_process, ev, data){ 
   PROCESS_BEGIN();
-  static struct etimer sleep_timer;
 
   NETSTACK_ROUTING.root_start();
   NETSTACK_MAC.on();
@@ -630,30 +589,20 @@ PROCESS_THREAD(root_process, ev, data){
   // register sockets
   while (-1 == tcp_socket_register(&socket_in, &socket_in_name, inputbuf, sizeof(inputbuf),outputbuf, sizeof(outputbuf),data_callback,event_callback)){
         PRINTF("ERROR: Socket registration 'IN' failed... \n");
-        wait(1);
-        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
   }
   while (-1 == tcp_socket_register(&socket_out, &socket_out_name, NULL, 0, outputbuf, sizeof(outputbuf),data_callback,event_callback)){
         PRINTF("ERROR: Socket registration 'OUT' failed... \n");
-        wait(1);
-        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
   }
   while (-1 == tcp_socket_register(&socket_root,&socket_root_name, rootbuf,sizeof(rootbuf), NULL, 0,data_callback, event_callback)){
         PRINTF("ERROR: Socket registration 'ROOT' failed... \n");
-        wait(1);
-        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
   }
   PRINTF("Sockets registered successfully! \n");
 
   while (-1 ==tcp_socket_listen(&socket_root, TCP_PORT_ROOT)){
         PRINTF("ERROR: Root socket failed to listen \n");
-        wait(1);
-        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
   }
   while (-1 == tcp_socket_listen(&socket_in, TCP_PORT_IN)){
         PRINTF("ERROR: In socket failed to listen \n");
-        wait(1);
-        PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&sleep_timer));
   }
   PRINTF("Root now listening for new nodes.. \n");
 
@@ -717,7 +666,7 @@ PROCESS_THREAD(status_process, ev, data){
 
               PRINTF("Sending ring message... \n");
                 while(-1 == tcp_socket_send(&socket_out, (uint8_t*) new_msg, sizeof(Timestamp_msg))){
-                  PRINTF("ERROR: Couldnt spawn ring message from root... \n");
+                  PRINTF("Error occured during TCP send... \n");
                 }
                 
                 
@@ -739,7 +688,7 @@ PROCESS_THREAD(status_process, ev, data){
           new_msg->hdr.msg_type = RING;
           new_msg->ticks = clock_time();
           while(-1 == tcp_socket_send(&socket_out, (uint8_t*) new_msg, sizeof(Timestamp_msg))){
-            PRINTF("ERROR: Couldnt spawn ring message from root... \n");
+            PRINTF("Error occured during TCP send... \n");
           }
           free(new_msg);
         }
@@ -752,7 +701,7 @@ PROCESS_THREAD(status_process, ev, data){
           PRINTF("Sending first election message... \n");
           Election_msg* msg = gen_Election_msg(ELECTION, id);
           while(-1 == tcp_socket_send(&socket_out, (uint8_t*) msg, sizeof(Election_msg))) { 
-            PRINTF("ERROR: Couldnt send election message from node... \n");
+            PRINTF("Error occured during TCP send... \n");
           }
           free(msg);
           set_participation(true);
