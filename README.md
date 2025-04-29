@@ -26,7 +26,6 @@ First, complete the steps listed under "Install development tools for Contiki-NG
 Secondly, complete the steps to "Install ARM compiler", and then add it to your path environment variable (how-to https://askubuntu.com/a/60219).
 
 #### Clone Contiki-NG-NES at a chosen directory
-**FOR THIS PROJECT, KEEP IN MIND THAT YOU SHOULD CLONE THIS REPOSITORY (https://github.com/Project-Repositories/contiki-ng-NES), AS WE ARE MAKING THE MODIFICATIONS HERE. DO NOT CLONE THE OFFICIAL CONTIKI-NG REPOSITORY.**
 
 A great speedup in compliation happens if the Github Repository is cloned to a subdirectory in your Ubuntu VM, compared to mounting the windows directory and accessing the files through WSL.
 
@@ -38,7 +37,7 @@ Remember to pull the submodules of this repository, as illustrated in the last s
 https://docs.contiki-ng.org/en/develop/doc/tutorials/Hello%2C-World%21.html
 
 #### Compile Hello-World for CC2650
-Be at the HelloWorld directory, then use the following command:
+$ cd to the HelloWorld directory, then use the following command:
 
 	$ make TARGET=cc26x0-cc13x0 BOARD=launchpad/cc2650
 
